@@ -26,6 +26,12 @@ namespace ddv {
 	struct const_tag {};
 	inline constexpr auto const_ = const_tag{};
 
+	template<typename T>
+	using nut = tp::unit<std::remove_cvref_t<T>>;
+
+	template<typename T>
+	inline constexpr auto nut_v = nut<T>{};
+
 	namespace detail {
 	
 		// will produce Is_1 + offs, Is_2 + offs, ...
@@ -40,22 +46,15 @@ namespace ddv {
 			return offset_indexes<From>(std::make_index_sequence<To - From>{});
 		}
 
-		template<typename T>
-		constexpr auto is_pointer_like(int)
-		-> decltype(*std::declval<T>(), static_cast<bool>(std::declval<T>())) { return true; }
-
-		template<typename T>
-		constexpr bool is_pointer_like(...) { return false; }
-
 		template<typename From, typename To>
-		constexpr auto can_static_cast(int)
-		-> decltype(static_cast<To>(std::declval<From>()), bool{}) { return true; }
+		concept can_static_cast = requires(From x) { static_cast<To>(x); };
 
-		template<typename From, typename To>
-		constexpr bool can_static_cast(...) { return false; }
+		template<typename T>
+		concept is_void = std::is_void_v<T> || std::is_same_v<T, void_value_t>;
 
-		template<typename T> struct is_optional : std::false_type {};
-		template<typename T> struct is_optional<std::optional<T>> : std::true_type {};
+		template<typename T>
+		constexpr auto is_optional(tp::unit<std::optional<T>>) -> std::true_type;
+		constexpr auto is_optional(...) -> std::false_type;
 
 		template<typename T> struct deduce_value { using type = T; };
 		template<typename T> struct deduce_value<std::optional<T>> {
@@ -67,9 +66,6 @@ namespace ddv {
 			using type = std::optional<T>;
 		};
 		template<> struct deduce_result<void> { using type = void_result_t; };
-
-		template<typename T>
-		inline constexpr bool is_value_void = std::is_void_v<T> || std::is_same_v<T, void_value_t>;
 
 		// blocks for building visitor mux
 		template<typename T>
@@ -105,23 +101,23 @@ namespace ddv {
 	inline constexpr auto bounded_index_sequence = detail::bounded_index_sequence<From, To>();
 
 	template<typename T>
-	inline constexpr bool is_pointer_like = detail::is_pointer_like<std::remove_cvref_t<T>>(0);
+	concept is_pointer_like = requires(T x) { *x; static_cast<bool>(x); };
 
 	template<typename Base, typename Derived>
-	inline constexpr bool is_virtual_base_of = std::is_base_of_v<Base, Derived> && !detail::can_static_cast<Base*, Derived*>(0);
+	concept is_virtual_base_of = std::is_base_of_v<Base, Derived> && !detail::can_static_cast<Base*, Derived*>;
 
 	template<typename T>
-	inline constexpr bool is_optional = detail::is_optional<std::remove_cvref_t<T>>::value;
+	concept is_optional = decltype(detail::is_optional(nut_v<T>))::value;
 
 	template<typename T>
-	using deduce_value_t = typename detail::deduce_value<std::remove_cvref_t<T>>::type;
+	using deduce_value_t = detail::deduce_value<std::remove_cvref_t<T>>::type;
 
 	template<typename T>
-	using deduce_result_t = typename detail::deduce_result<std::remove_cvref_t<T>>::type;
+	using deduce_result_t = detail::deduce_result<std::remove_cvref_t<T>>::type;
 
 	// true if T is exactly void or `void_value_t`
 	template<typename T>
-	inline constexpr auto is_void = detail::is_value_void<deduce_value_t<T>>;
+	concept is_void = detail::is_void<deduce_value_t<T>>;
 
 	inline constexpr auto noop = [](auto&&...) {};
 	using noop_t = decltype(noop);
@@ -148,14 +144,13 @@ namespace ddv {
 	namespace detail {
 
 		template<typename... Ts>
-		constexpr bool is_mux_interface(const mux<Ts...>*) { return true; }
-
-		constexpr bool is_mux_interface(...) { return false; }
+		constexpr auto is_mux_interface(tp::unit<mux<Ts...>>) -> std::true_type;
+		constexpr auto is_mux_interface(...) -> std::false_type;
 
 	} // namespace detail
 
 	template<typename T>
-	inline constexpr bool is_mux_interface = detail::is_mux_interface(std::add_pointer_t<T>{});
+	concept is_mux_interface = decltype(detail::is_mux_interface(nut_v<T>))::value;
 
 	// can be used with pipe operator to extract a value of given type from variant type returned by serial visitor
 	template<typename T>

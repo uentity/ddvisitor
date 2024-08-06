@@ -3,6 +3,7 @@
 #include <ddv/visitor_common.h>
 #include <ddv/deduce_callable.h>
 
+#include <concepts>
 #include <tuple>
 #include <variant>
 
@@ -21,32 +22,32 @@ namespace ddv {
 		template<typename T> struct is_serial_visitor : std::false_type {};
 		template<typename... Fs> struct is_serial_visitor<serial<Fs...>> : std::true_type {};
 
-		template<typename T, typename U>
-		constexpr bool carry_type(tp::tpack<T>, tp::unit<U>) {
-			return std::is_same_v<typename deduce_value<T>::type, U>;
-		}
+		template<typename U, typename T>
+			requires std::same_as<deduce_value_t<T>, U>
+		constexpr auto carry_type(tp::unit<T>) -> std::true_type;
 
-		template<typename... Ts, typename U>
-		constexpr bool carry_type(tp::unit<std::variant<Ts...>>, tp::unit<U>) {
-			return (carry_type(tp::unit_v<Ts>, tp::unit_v<U>) || ...);
-		}
+		template<typename U, typename... Ts>
+		constexpr auto carry_type(tp::unit<std::variant<Ts...>>)
+		-> std::bool_constant<(carry_type<U>(tp::unit_v<Ts>) || ...)>;
+
+		template<typename U> constexpr auto carry_type(...) -> std::false_type;
 
 	} // ddv::detail
 
 	// traits for detecting `std::variant`
 	template<typename T>
-	inline constexpr bool is_variant = detail::is_variant<std::remove_cvref_t<T>>::value;
+	concept is_variant = detail::is_variant<std::remove_cvref_t<T>>::value;
 
 	// traits for detecting `serial`
 	template<typename T>
-	inline constexpr bool is_serial_visitor = detail::is_serial_visitor<std::remove_cvref_t<T>>::value;
+	concept is_serial_visitor = detail::is_serial_visitor<std::remove_cvref_t<T>>::value;
 
 	// checks whether type T can carry target type U where T can be optional/variant
 	template<typename T, typename U>
-	inline constexpr bool carry_type = detail::carry_type(tp::unit_v<std::remove_cvref_t<T>>, tp::unit_v<U>);
+	concept carry_type = decltype(detail::carry_type<U>(nut_v<T>))::value;
 
 	template<typename T>
-	inline constexpr bool carry_void = carry_type<T, void> || carry_type<T, void_value_t>;
+	concept carry_void = carry_type<T, void> || carry_type<T, void_value_t>;
 
 	// make result of type R from source value of type T
 	// if R is void -> make_result<R>() is also void, otherwise it produces std::optional
@@ -140,27 +141,27 @@ namespace ddv {
 		template<typename F, bool Complete>
 		using ref_visitor_type = typename decltype(make_ref_visitor_type<F, Complete>())::type;
 
-		// calc final decision whether F_i matches the value of type T being visited
-		template<typename T, std::size_t I>
-		static constexpr bool is_matched = std::is_invocable_v<Fi<I>>
-			|| std::is_invocable_v<Fi<I>, T>
-			|| std::is_invocable_v<Fi<I>, T, ref_visitor_type<Fi<I>, false>>;
+		// calc final decision whether F matches the value of type T being visited
+		template<typename F, typename T>
+		static constexpr bool is_matched = std::invocable<F>
+			|| std::invocable<F, T>
+			|| std::invocable<F, T, ref_visitor_type<F, false>>;
 
-		template<typename T, std::size_t... Is>
-		static constexpr bool can_visit_impl(std::index_sequence<Is...> fis) {
+		template<typename T, typename... Gs>
+		static constexpr bool can_visit_impl(tp::unit<T>, std::tuple<Gs...>* gs = nullptr) {
 			if constexpr (is_optional<T>)
-				return can_visit_impl<decltype( *std::declval<T>() )>(fis);
+				return can_visit_impl(tp::unit_v<decltype(*std::declval<T>())>, gs);
 			else if constexpr (is_variant<T>)
-				return can_visit_impl(fis, tp::unit_v<std::remove_reference_t<T>>);
+				return can_visit_impl<Gs...>(nut_v<T>);
 			else
 				// true if T can be visited by at least one callable
-				return is_void<T> || (is_matched<bind_lvalue_ref<T>, Is> || ...);
+				return is_void<T> || (is_matched<Gs, bind_lvalue_ref<T>> || ...);
 		}
 
-		template<typename Fis, typename... Ts>
-		static constexpr bool can_visit_impl(Fis fis, tp::unit<std::variant<Ts...>>) {
+		template<typename... Gs, typename... Ts>
+		static constexpr bool can_visit_impl(tp::unit<std::variant<Ts...>>) {
 			// returns true only if can visit each alternative of variant type T
-			return (can_visit_impl<Ts>(fis) && ...);
+			return (can_visit_impl<Ts, Gs...>(tp::unit_v<Ts>) && ...);
 		}
 
 		storage_t fs_;
@@ -168,16 +169,16 @@ namespace ddv {
 	public:
 		// tests if value of type `F` can be visited by this serial visitor (there is at least one matching callable)
 		template<typename T>
-		static constexpr bool can_visit = can_visit_impl<T>(std::make_index_sequence<chain_length>{});
+		static constexpr bool can_visit = can_visit_impl(tp::unit_v<T>, (storage_t*)nullptr);
 
 		// converting ctor to perfectly forward callables into internal storage
 		template<typename... Gs>
-			requires std::is_constructible_v<storage_t, Gs...>
+			requires std::constructible_from<storage_t, Gs...>
 		constexpr serial(Gs&&... gs) : fs_(std::forward<Gs>(gs)...) {}
 
 		// call operator is only enabled if passed value can be visited
 		// supports optionals and variants auto-unpacking
-		// intended mostly for internal/machinery usage
+		// non-simplified return type to pass all possible results, including `ok` and `none`
 		template<typename T>
 			requires can_visit<T>
 		constexpr auto operator()(T&& value) {
@@ -187,24 +188,21 @@ namespace ddv {
 		// public interface to `operator()` above to be used by humans
 		// always enabled, produces readable error if value can't be visited, don't return void values
 		// auto simplifies result type `optional<variant<void_value_t, T>>` -> `optional<T>`
+		// downside: cannot distinguish between `ok` and `none` in returned value, always will be `none`
 		template<typename T>
 		constexpr auto visit(T&& value) {
-			constexpr bool enabled = can_visit<T>;
-			if constexpr (enabled) {
-				// pass Simplify = true flag that strips `void_value_t` from result type
-				// like `optional<variant<void_value_t, T>>` -> `optional<T>`
-				using res_t = decltype( do_visit<true>(std::declval<T>()) );
-				if constexpr (is_void<res_t>)
-					do_visit<true>(std::forward<T>(value));
-				else
-					return do_visit<true>(std::forward<T>(value));
-			}
+			static_assert(
+				can_visit<T>,
+				"There is no callable accepting given value. "
+				"You can append `noop` to the chain of callables to provide default fallback."
+			);
+			// pass Simplify = true flag that strips `void_value_t` from result type
+			// like `optional<variant<void_value_t, T>>` -> `optional<T>`
+			using res_t = decltype( do_visit<true>(std::declval<T>()) );
+			if constexpr (is_void<res_t>)
+				do_visit<true>(std::forward<T>(value));
 			else
-				static_assert(
-					enabled,
-					"There is no callable accepting given value. "
-					"You can append `noop` to the chain of callables to provide default fallback."
-				);
+				return do_visit<true>(std::forward<T>(value));
 		}
 
 		// effectively calls `value.visit(*this)`
@@ -348,7 +346,7 @@ namespace ddv {
 		template<typename T, std::size_t... Is>
 		static constexpr auto find_match_idx(std::index_sequence<Is...>) {
 			std::size_t res = chain_length;
-			tp::ignore = ((is_matched<T, Is> ? res = Is, false : true) && ...);
+			tp::ignore = ((is_matched<Fi<Is>, T> ? res = Is, false : true) && ...);
 			return res;
 		}
 

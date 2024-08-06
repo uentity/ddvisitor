@@ -27,7 +27,7 @@ namespace ddv {
 		// [NOTE] can't just inherit ctors like `using Serial::Serial;`
 		// copy/move ctors aren't inherited => initializing `visitable_demux` with instance of `serial` would fail
 		template<typename... Ts>
-			requires std::is_constructible_v<Serial, Ts...>
+			requires std::constructible_from<Serial, Ts...>
 		visitable_demux(Ts&&... args) : Serial(std::forward<Ts>(args)...) {}
 
 		template<typename T>
