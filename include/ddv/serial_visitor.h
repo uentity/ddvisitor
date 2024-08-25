@@ -282,7 +282,7 @@ namespace ddv {
 		}
 
 		template<typename T>
-		static constexpr auto simplify_merged_type(tp::unit<T> t) { return t; }
+		static constexpr auto simplify_merged_type(tp::unit<T>) -> tp::unit<T> { return {}; }
 
 		template<bool Simplify, typename... Ts>
 		static constexpr auto calc_merged_type() {
@@ -320,8 +320,8 @@ namespace ddv {
 					return make_result<res_t>(none);
 			}
 			else if constexpr (is_variant<T>) {
-				const auto do_invoke = [&f, dp](auto&& x) {
-					return unpack_and_invoke(std::forward<decltype(x)>(x), std::forward<F>(f), dp);
+				const auto do_invoke = [&f, dp]<typename X>(X&& x) {
+					return unpack_and_invoke(std::forward<X>(x), std::forward<F>(f), dp);
 				};
 				// calculate type to return by visiting every value alternative
 				using res_value_t = decltype(
@@ -346,7 +346,7 @@ namespace ddv {
 		template<typename T, std::size_t... Is>
 		static constexpr auto find_match_idx(std::index_sequence<Is...>) {
 			std::size_t res = chain_length;
-			tp::ignore = ((is_matched<Fi<Is>, T> ? res = Is, false : true) && ...);
+			(void)((is_matched<Fi<Is>, T> ? res = Is, false : true) && ...);
 			return res;
 		}
 
@@ -355,9 +355,7 @@ namespace ddv {
 			using U = bind_lvalue_ref<T>;
 			constexpr auto match_idx = find_match_idx<U>(bounded_index_sequence<From, chain_length>);
 			if constexpr (match_idx < chain_length) {
-				constexpr auto invoke_matched_fn = [](auto&& f, auto&& x, serial* self) {
-					using F = std::remove_reference_t<decltype(f)>;
-					using X = decltype(x);
+				constexpr auto invoke_matched_fn = []<typename F, typename X>(F&& f, X&& x, serial* self) {
 					// [NOTE] two following checks normally should be in corresponding `if constexpr` blocks,
 					// but explicitly extracted to workaround one more MSVC compiler bug
 					constexpr bool can_invoke = std::is_invocable_v<F>;
