@@ -304,7 +304,7 @@ namespace ddv {
 		// try to invoke F with every variant alternative and calculate resulting common value type
 		template<bool Simplify, typename F, typename... Ts>
 		static constexpr auto calc_variant_response(tp::unit<std::variant<Ts...>>) {
-			return calc_merged_type<Simplify, deduce_value_t<std::invoke_result_t<F, Ts>>...>();
+			return calc_merged_type<Simplify, deduce_value_t<call_result_t<F, Ts>>...>();
 		}
 
 		// recursively unpack optional/variant, optionally deref pointer-likes and then call `f` on extracted value
@@ -356,20 +356,16 @@ namespace ddv {
 			constexpr auto match_idx = find_match_idx<U>(bounded_index_sequence<From, chain_length>);
 			if constexpr (match_idx < chain_length) {
 				constexpr auto invoke_matched_fn = []<typename F, typename X>(F&& f, X&& x, serial* self) {
-					// [NOTE] two following checks normally should be in corresponding `if constexpr` blocks,
-					// but explicitly extracted to workaround one more MSVC compiler bug
-					constexpr bool can_invoke = std::is_invocable_v<F>;
-					constexpr bool can_invoke_x = std::is_invocable_v<F, X>;
-					if constexpr (can_invoke)
+					if constexpr (std::invocable<F>)
 						return f();
-					else if constexpr (can_invoke_x)
+					else if constexpr (std::invocable<F, X>)
 						return f(std::forward<X>(x));
 					else {
 						auto self_ref = ref_visitor_type<F, true>(*self);
 						return f(std::forward<X>(x), self_ref);
 					}
 				};
-				using ret_t = std::invoke_result_t<decltype(invoke_matched_fn), Fi<match_idx>, U, serial*>;
+				using ret_t = call_result_t<decltype(invoke_matched_fn), Fi<match_idx>, U, serial*>;
 
 				if constexpr (std::is_void_v<ret_t>)
 					invoke_matched_fn(std::get<match_idx>(fs_), std::forward<T>(value), this);

@@ -10,12 +10,12 @@ void accept(mux_type& v) override __VA_ARGS__; \
 void accept(const_mux_type& v) const override __VA_ARGS__;
 
 #define VISITOR_SUPPORT(...) \
-auto accept(mux_type& v) -> void override __VA_ARGS__ { return v.visit(this); } \
-auto accept(const_mux_type& v) const -> void override __VA_ARGS__ { return v.visit(this); }
+auto accept(mux_type& v) -> void override __VA_ARGS__ { v.visit(this); } \
+auto accept(const_mux_type& v) const -> void override __VA_ARGS__ { v.visit(this); }
 
 #define VISITOR_SUPPORT_IMPL(T) \
-void T::accept(mux_type& v) { return v.visit(this); } \
-void T::accept(const_mux_type& v) const { return v.visit(this); }
+void T::accept(mux_type& v) { v.visit(this); } \
+void T::accept(const_mux_type& v) const { v.visit(this); }
 
 namespace ddv {
 
@@ -169,21 +169,21 @@ namespace ddv {
 			using cherry_ptr_t = std::add_pointer_t<cherry_t>;
 			using bait_ptr_t = std::conditional_t<std::is_const_v<cherry_t>, const Ancestor*, Ancestor*>;
 			static_assert(
-				std::is_base_of_v<Ancestor, cherry_t>
-				&& (std::is_invocable_v<F> || std::is_invocable_v<F, cherry_ptr_t, Ts...>),
+				std::is_base_of_v<Ancestor, cherry_t> && (std::invocable<F> || std::invocable<F, cherry_ptr_t, Ts...>),
 				"Callable must either accept pointer to type derived from visitable hierarchy ancestor as 1st argument "
 				"or take no arguments"
 			);
 
 			return [f = std::forward<F>(f)](bait_ptr_t self, Ts... xs) mutable {
+				constexpr bool f_invocable = std::invocable<F>;
 				using Fret_t = std::conditional_t<
-					std::is_invocable_v<F>, std::invoke_result<F>, std::invoke_result<F, cherry_ptr_t, Ts...>
+					f_invocable, std::invoke_result<F>, std::invoke_result<F, cherry_ptr_t, Ts...>
 				>::type;
 				using res_t = deduce_result_t<Fret_t>;
 
 				if (typeid(*self) == typeid(cherry_t)) {
 					const auto call_f = [&] {
-						if constexpr (std::is_invocable_v<F>)
+						if constexpr (f_invocable)
 							return f();
 						else {
 							if constexpr (is_virtual_base_of<Ancestor, cherry_t>)

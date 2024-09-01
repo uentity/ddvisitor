@@ -156,6 +156,10 @@ namespace ddv {
 	template<typename T>
 	inline constexpr auto cast = [](auto&& x) -> T { return std::forward<decltype(x)>(x); };
 
+	// compiles faster that std::invoke_result_t
+	template<typename F, typename... Args>
+	using call_result_t = decltype(std::declval<F>()(std::declval<Args>()...));
+
 } // namespace ddv
 
 #if defined(_MSC_VER)
