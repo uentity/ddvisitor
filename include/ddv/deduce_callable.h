@@ -51,17 +51,22 @@ namespace ddv::util::detail {
 		using result = typename core_t::result;
 
 		static constexpr auto nargs = size(args{});
+		static constexpr auto args_v = args{};
+
 		using nonempty_args = std::conditional_t<(nargs > 0), args, tp::tpack<void>>;
-		using first_arg = decltype(head(nonempty_args{}))::type;
-		using last_arg = decltype(back(nonempty_args{}))::type;
-		template<std::size_t i> using ith_arg = decltype(get<i>(args{}))::type;
+		static constexpr auto nonempty_args_v = nonempty_args{};
+
+		using first_arg = decltype(head(nonempty_args_v))::type;
+		using last_arg = decltype(back(nonempty_args_v))::type;
+		template<std::size_t i> using ith_arg = decltype(get<i>(args_v))::type;
 	};
 
-	template<typename F, typename = void>
-	struct can_deduce_callable : std::false_type {};
+	template<typename F>
+		requires requires { tp::unit_v<typename deduce_callable_core<F>::type>; }
+	constexpr auto can_deduce_callable() -> std::true_type;
 
 	template<typename F>
-	struct can_deduce_callable<F, std::void_t<typename deduce_callable_core<F>::type>> : std::true_type {};
+	constexpr auto can_deduce_callable() -> std::false_type;
 
 } // namespace ddv::util::detail
 
@@ -71,6 +76,6 @@ namespace ddv::util {
 	using deduce_callable = detail::deduce_callable<std::remove_reference_t<F>>;
 
 	template<typename F>
-	inline constexpr bool can_deduce_callable = detail::can_deduce_callable<std::remove_reference_t<F>>::value;
+	concept can_deduce_callable = decltype(detail::can_deduce_callable<std::remove_reference_t<F>>())::value;
 
 } // namespace dd::util
