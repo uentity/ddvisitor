@@ -17,34 +17,33 @@ namespace ddv {
 	namespace detail {
 
 		template<typename T> struct is_variant : std::false_type {};
-		template<typename... Ts> struct is_variant<std::variant<Ts...>> : std::true_type{};
+		template<typename... Ts> struct is_variant<std::variant<Ts...>> : std::true_type {};
 
 		template<typename T> struct is_serial_visitor : std::false_type {};
 		template<typename... Fs> struct is_serial_visitor<serial<Fs...>> : std::true_type {};
 
 		template<typename U, typename T>
-			requires std::same_as<deduce_value_t<T>, U>
-		constexpr auto carry_type(tp::unit<T>) -> std::true_type;
+		constexpr bool carry_type(tp::tpack<T>) {
+			return std::is_same_v<typename deduce_value<T>::type, U>;
+		}
 
 		template<typename U, typename... Ts>
-		constexpr auto carry_type(tp::unit<std::variant<Ts...>>)
-		-> std::bool_constant<(carry_type<U>(tp::unit_v<Ts>) || ...)>;
+		constexpr bool carry_type(tp::unit<std::variant<Ts...>>) {
+			return (carry_type<U>(tp::unit_v<Ts>) || ...);
+		}
 
-		template<typename U> constexpr auto carry_type(...) -> std::false_type;
 
 	} // ddv::detail
 
-	// traits for detecting `std::variant`
 	template<typename T>
 	concept is_variant = detail::is_variant<std::remove_cvref_t<T>>::value;
 
-	// traits for detecting `serial`
 	template<typename T>
 	concept is_serial_visitor = detail::is_serial_visitor<std::remove_cvref_t<T>>::value;
 
 	// checks whether type T can carry target type U where T can be optional/variant
 	template<typename T, typename U>
-	concept carry_type = decltype(detail::carry_type<U>(nut_v<T>))::value;
+	concept carry_type = detail::carry_type<U>(nut_v<T>);
 
 	template<typename T>
 	concept carry_void = carry_type<T, void> || carry_type<T, void_value_t>;
