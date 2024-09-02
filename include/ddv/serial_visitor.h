@@ -16,11 +16,17 @@ namespace ddv {
 
 	namespace detail {
 
-		template<typename T> struct is_variant : std::false_type {};
-		template<typename... Ts> struct is_variant<std::variant<Ts...>> : std::true_type {};
+		template<typename T>
+		constexpr auto is_variant(tp::unit<T>) -> std::false_type;
 
-		template<typename T> struct is_serial_visitor : std::false_type {};
-		template<typename... Fs> struct is_serial_visitor<serial<Fs...>> : std::true_type {};
+		template<typename... Ts>
+		constexpr auto is_variant(tp::unit<std::variant<Ts...>>) -> std::true_type;
+
+		template<typename T>
+		constexpr auto is_serial_visitor(tp::unit<T>) -> std::false_type;
+
+		template<typename... Fs>
+		constexpr auto is_serial_visitor(tp::unit<serial<Fs...>>) -> std::true_type;
 
 		template<typename U, typename T>
 		constexpr bool carry_type(tp::tpack<T>) {
@@ -36,10 +42,10 @@ namespace ddv {
 	} // ddv::detail
 
 	template<typename T>
-	concept is_variant = detail::is_variant<std::remove_cvref_t<T>>::value;
+	concept is_variant = decltype(detail::is_variant(nut_v<T>))::value;
 
 	template<typename T>
-	concept is_serial_visitor = detail::is_serial_visitor<std::remove_cvref_t<T>>::value;
+	concept is_serial_visitor = decltype(detail::is_serial_visitor(nut_v<T>))::value;
 
 	// checks whether type T can carry target type U where T can be optional/variant
 	template<typename T, typename U>
@@ -324,7 +330,7 @@ namespace ddv {
 				};
 				// calculate type to return by visiting every value alternative
 				using res_value_t = decltype(
-					calc_variant_response<Simplify, decltype(do_invoke)>(tp::unit_v<std::remove_cvref_t<T>>)
+					calc_variant_response<Simplify, decltype(do_invoke)>(nut_v<T>)
 				)::type;
 
 				// unpack variant, visit value & convert result to calculated type
