@@ -209,3 +209,27 @@ TEST_CASE("[serial visitor] variant result types", "[ddv]") {
 	CHECK(svar_rv);
 	CHECK(*svar_rv == 2.);
 }
+
+TEST_CASE("[serial visitor] strict call policy", "[ddv]") {
+	auto v = ddv::serial{
+		[](double) { return Match::One; },
+		[](float) { return Match::Two; },
+		[](long) { return Match::Three; },
+		[](int) { return Match::Four; },
+		[](short) { return Match::Five; },
+		[](unsigned long) { return Match::Six; },
+		[](unsigned) { return Match::Seven; },
+		[](unsigned short) { return Match::Eight; },
+		[](char) { return Match::Nine; },
+	};
+
+	CHECK(*v.visit('a') == Match::Nine);
+	CHECK(*v.visit((unsigned short)42) == Match::Eight);
+	CHECK(*v.visit((unsigned)42) == Match::Seven);
+	CHECK(*v.visit((unsigned long)42) == Match::Six);
+	CHECK(*v.visit((short)42) == Match::Five);
+	CHECK(*v.visit(42) == Match::Four);
+	CHECK(*v.visit((long)42) == Match::Three);
+	CHECK(*v.visit((float)42) == Match::Two);
+	CHECK(*v.visit(42.) == Match::One);
+}

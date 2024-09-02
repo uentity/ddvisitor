@@ -38,6 +38,15 @@ namespace ddv {
 			return (carry_type<U>(tp::unit_v<Ts>) || ...);
 		}
 
+		template<typename... Args, typename... Params>
+			requires ((
+				std::same_as<Args, Params>
+				|| std::derived_from<std::remove_pointer_t<Args>, std::remove_pointer_t<Params>>
+			) && ...)
+		constexpr auto args_match_params(tp::tpack<Args...>, tp::tpack<Params...>) -> std::true_type;
+
+		template<typename... Args, typename... Params>
+		constexpr auto args_match_params(tp::tpack<Args...>, tp::tpack<Params...>) -> std::false_type;
 
 	} // ddv::detail
 
@@ -53,6 +62,17 @@ namespace ddv {
 
 	template<typename T>
 	concept carry_void = carry_type<T, void> || carry_type<T, void_value_t>;
+
+	template<typename Args, typename Params>
+	concept args_match_params = decltype(detail::args_match_params(
+		transform<std::decay>(Args{}), transform<std::decay>(Params{})
+	))::value;
+
+	template<typename F, typename... Args>
+	concept strict_callable = std::invocable<F, Args...>
+		&& (!util::can_deduce_callable<F>
+			|| args_match_params<tp::tpack<Args...>, typename util::deduce_callable<F>::args>
+		);
 
 	// make result of type R from source value of type T
 	// if R is void -> make_result<R>() is also void, otherwise it produces std::optional
@@ -146,11 +166,11 @@ namespace ddv {
 		template<typename F, bool Complete>
 		using ref_visitor_type = typename decltype(make_ref_visitor_type<F, Complete>())::type;
 
-		// calc final decision whether F matches the value of type T being visited
+		// calc final decision whether F matches (can be called with) the value of type T being visited
 		template<typename F, typename T>
 		static constexpr bool is_matched = std::invocable<F>
-			|| std::invocable<F, T>
-			|| std::invocable<F, T, ref_visitor_type<F, false>>;
+			|| strict_callable<F, T>
+			|| strict_callable<F, T, ref_visitor_type<F, false>>;
 
 		template<typename T, typename... Gs>
 		static constexpr bool can_visit_impl(tp::unit<T>, std::tuple<Gs...>* gs = nullptr) {
