@@ -26,8 +26,8 @@ namespace ddv {
 	struct const_tag {};
 	inline constexpr auto const_ = const_tag{};
 
-	template<typename T>
-	using nut = tp::unit<std::remove_cvref_t<T>>;
+	template<typename T> using nut_t = std::remove_cvref_t<T>;
+	template<typename T> using nut = tp::unit<nut_t<T>>;
 
 	template<typename T>
 	inline constexpr auto nut_v = nut<T>{};
@@ -50,11 +50,7 @@ namespace ddv {
 		concept can_static_cast = requires(From x) { static_cast<To>(x); };
 
 		template<typename T>
-		concept is_void = std::is_void_v<T> || std::is_same_v<T, void_value_t>;
-
-		template<typename T>
-		constexpr auto is_optional(tp::unit<std::optional<T>>) -> std::true_type;
-		constexpr auto is_optional(...) -> std::false_type;
+		concept is_void = std::is_void_v<T> || std::same_as<T, void_value_t>;
 
 		template<typename T> struct deduce_value { using type = T; };
 		template<typename T> struct deduce_value<std::optional<T>> {
@@ -107,7 +103,7 @@ namespace ddv {
 	concept is_virtual_base_of = std::is_base_of_v<Base, Derived> && !detail::can_static_cast<Base*, Derived*>;
 
 	template<typename T>
-	concept is_optional = decltype(detail::is_optional(nut_v<T>))::value;
+	concept is_optional = std::same_as<nut_t<T>, std::optional<typename nut_t<T>::value_type>>;
 
 	template<typename T>
 	using deduce_value_t = detail::deduce_value<std::remove_cvref_t<T>>::type;
@@ -141,20 +137,12 @@ namespace ddv {
 		detail::make_visitor<Mux, Demux>(typename Mux::types{})
 	)::type;
 
-	namespace detail {
-
-		template<typename... Ts>
-		constexpr auto is_mux_interface(tp::unit<mux<Ts...>>) -> std::true_type;
-		constexpr auto is_mux_interface(...) -> std::false_type;
-
-	} // namespace detail
-
 	template<typename T>
-	concept is_mux_interface = decltype(detail::is_mux_interface(nut_v<T>))::value;
+	concept is_mux = std::same_as<nut_t<T>, tp::make<mux, typename nut_t<T>::types>>;
 
 	// can be used with pipe operator to extract a value of given type from variant type returned by serial visitor
 	template<typename T>
-	inline constexpr auto cast = [](auto&& x) -> T { return std::forward<decltype(x)>(x); };
+	inline constexpr auto cast = []<typename X>(X&& x) -> T { return std::forward<X>(x); };
 
 	// compiles faster that std::invoke_result_t
 	template<typename F, typename... Args>

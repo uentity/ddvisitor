@@ -149,7 +149,7 @@ namespace ddv {
 				if constexpr (Finfo::nargs > 1) {
 					using second_arg = typename Finfo::template ith_arg<1>;
 					static_assert(
-						is_mux_interface<second_arg> && std::is_lvalue_reference_v<second_arg>,
+						is_mux<second_arg> && std::is_lvalue_reference_v<second_arg>,
 						"2nd argument of matched callable must be a reference to the visitor interface (multiplexer)"
 					);
 					using Mux = std::remove_cvref_t<second_arg>;
