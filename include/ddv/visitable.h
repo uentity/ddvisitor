@@ -142,8 +142,6 @@ namespace ddv {
 			else
 				return serial{
 					do_make_visitor(std::forward<F>(f), tp::unit_v<Ts>)...,
-					// item that offloads value to rest of upper level visitor chain
-					[] { return none; }
 				};
 		}
 
