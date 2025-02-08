@@ -60,13 +60,11 @@ namespace ddv {
 	/////////////////////////////////////////////////////////////////////////
 	// make visitor with given multiplexer interface and `serial` demultiplexer
 	template<typename Mux, typename... Fs>
-	constexpr auto make(Fs&&... fs) {
+	constexpr auto make_visitable_visitor(Fs&&... fs) {
 		using Serial = decltype( serial{std::declval<Fs>()...} );
 		using Demux = visitable_demux<Mux, Serial>;
 		return visitor<Mux, Demux>(std::forward<Fs>(fs)...);
 	}
-
-	template<typename T> struct TD;
 
 	/////////////////////////////////////////////////////////////////////////
 	// Implements double dispatch visitor API
@@ -81,7 +79,7 @@ namespace ddv {
 
 		template<typename... Fs>
 		auto visit(Fs&&... fs) {
-			auto v = make<mux_type>(std::forward<Fs>(fs)...);
+			auto v = make_visitable_visitor<mux_type>(std::forward<Fs>(fs)...);
 			this->accept(v);
 			if constexpr (!decltype(v)::is_result_void)
 				return *v;
@@ -89,7 +87,7 @@ namespace ddv {
 
 		template<typename... Fs>
 		auto visit(Fs&&... fs) const {
-			auto v = make<const_mux_type>(std::forward<Fs>(fs)...);
+			auto v = make_visitable_visitor<const_mux_type>(std::forward<Fs>(fs)...);
 			this->accept(v);
 			if constexpr (!decltype(v)::is_result_void)
 				return *v;

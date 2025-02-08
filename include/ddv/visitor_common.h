@@ -82,7 +82,7 @@ namespace ddv {
 		};
 
 		template<typename Mux, typename Demux, typename... Ts>
-		constexpr auto make_visitor(tp::tpack<Ts...>) {
+		constexpr auto make_visitor_t(tp::tpack<Ts...>) {
 			struct demux final
 				: Demux, demux_wire<Ts, Mux, demux>... {
 				using DemuxBackend [[maybe_unused]] = Demux;
@@ -134,7 +134,7 @@ namespace ddv {
 
 	template<typename Mux, typename Demux>
 	using visitor = typename decltype(
-		detail::make_visitor<Mux, Demux>(typename Mux::types{})
+		detail::make_visitor_t<Mux, Demux>(typename Mux::types{})
 	)::type;
 
 	template<typename T>
