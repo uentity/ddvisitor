@@ -165,7 +165,7 @@ namespace ddv {
 			using cherry_ptr_t = std::add_pointer_t<cherry_t>;
 			using bait_ptr_t = std::conditional_t<std::is_const_v<cherry_t>, const Ancestor*, Ancestor*>;
 			static_assert(
-				std::is_base_of_v<Ancestor, cherry_t> && (std::invocable<F> || std::invocable<F, cherry_ptr_t, Ts...>),
+				std::invocable<F> || (std::is_base_of_v<Ancestor, cherry_t> && std::invocable<F, cherry_ptr_t, Ts...>),
 				"Callable must either accept pointer to type derived from visitable hierarchy ancestor as 1st argument "
 				"or take no arguments"
 			);
