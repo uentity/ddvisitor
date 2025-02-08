@@ -56,6 +56,11 @@ if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND BUILD_TESTING)
 	)
 	set_property(TARGET ddv_tests PROPERTY COMPILE_WARNING_AS_ERROR ON)
 	catch_discover_tests(ddv_tests)
+
+	add_executable(dynamic_cast_test ${CMAKE_CURRENT_SOURCE_DIR}/tests/dynamic_cast_test.cpp)
+	target_link_libraries(dynamic_cast_test PRIVATE Catch2::Catch2WithMain)
+	target_link_libraries(dynamic_cast_test PRIVATE ddvisitor)
+	add_test(NAME "[benchmark] dynamic_cast vs ddv" COMMAND dynamic_cast_test)
 endif ()
 
 include(GNUInstallDirs)
