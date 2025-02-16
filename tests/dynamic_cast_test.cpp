@@ -5,8 +5,6 @@
  * implementations of dynamic_cast" [1]
  *
  * [1]: https://blog.michael.franzl.name/2021/03/21/performance-comparison-of-three-different-implementations-of-dynamic_cast/
- * MIT License
- * Copyright (c) 2021 Michael Karl Franzl
  *
 */
 
@@ -28,8 +26,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-//enum class Hierarchy { deep, shallow, balanced };
-//enum class SortOrder { aligned, shuffled };
 
 uint64_t max_num_ops = 0;
 
@@ -144,8 +140,8 @@ void shuffle(V& v) {
 	std::shuffle(std::begin(v), std::end(v), rng);
 }
 
-void print_average(float num) {
-	auto avg = num / 9.0;
+void print_average(float num, float denom = 9.0) {
+	auto avg = num / denom;
 	printf("------------\n");
 	printf("AVG: %5.1f MHz                  ", avg / num_usecs_per_sec);
 	draw_bar(avg / max_num_ops, "=");
@@ -179,10 +175,11 @@ void run_benchmarks(std::vector<A*>& v) {
 			}
 			return s;
 		});
+		// for dynamic_cast exclude casts A -> A since they are instant
 		if constexpr (!std::is_same_v<T, A>)
 			sum += res;
 	});
-	print_average(sum);
+	print_average(sum, 8.0);
 	printf("```\n");
 
 	printf("Implementation: `DDV fast`\n");
@@ -200,8 +197,7 @@ void run_benchmarks(std::vector<A*>& v) {
 			}
 			return s;
 		});
-		if constexpr (!std::is_same_v<T, A>)
-			sum += res;
+		sum += res;
 	});
 	print_average(sum);
 	printf("```\n");
@@ -221,8 +217,7 @@ void run_benchmarks(std::vector<A*>& v) {
 			}
 			return s;
 		});
-		if constexpr (!std::is_same_v<T, A>)
-			sum += res;
+		sum += res;
 	});
 	print_average(sum);
 	printf("```\n");
@@ -242,8 +237,7 @@ void run_benchmarks(std::vector<A*>& v) {
 			}
 			return s;
 		});
-		if constexpr (!std::is_same_v<T, A>)
-			sum += res;
+		sum += res;
 	});
 	print_average(sum);
 	printf("```\n");
