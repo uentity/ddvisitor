@@ -105,40 +105,41 @@ uint64_t run(std::string label, std::function<uint64_t()> benchmark) {
 	auto successes = benchmark();
 	auto t2 = std::chrono::high_resolution_clock::now();
 
-	auto usecs_per_iterations =
-		std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count();
+	auto usecs_per_iterations = std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count();
 	auto num_ops = num_usecs_per_sec / (float(usecs_per_iterations) / n);
 	if (max_num_ops == 0) max_num_ops = num_ops; // the first run will be 100%
 	auto percent = float(num_ops) / float(max_num_ops);
 	printf(
-			"%3s: %5.1f MHz (%3.0f%%) [%7lu] ",
-			label.c_str(),
-			num_ops / num_usecs_per_sec,
-			percent * 100, successes
-		  );
+		"%3s: %5.1f MHz (%3.0f%%) [%7lu] ",
+		label.c_str(),
+		num_ops / num_usecs_per_sec,
+		percent * 100, successes
+	);
 	draw_bar(percent);
 	return num_ops;
 }
 
 template<typename A>
-void generate_data(std::vector<std::shared_ptr<A>>& v, unsigned int from = 7, unsigned int width = 0) {
-	v.reserve(n); // ensure contiguous memory
-
+auto generate_data(unsigned int from = 0, unsigned int width = 7) {
 	using types = typename A::mux_type::types;
-	std::array<std::shared_ptr<A>, tp::size(types{})> ts;
-	uint64_t i = 0;
-	tp::for_each(types{}, [&]<typename T>(tp::unit<T>) mutable {
-		ts[i++] = std::make_shared<T>();
-	});
+	static const auto ts = [] {
+		auto res = std::array<std::unique_ptr<A>, tp::size(types{})>{};
+		tp::for_each(types{}, [&res, i = uint64_t{}]<typename T>(tp::unit<T>) mutable {
+			res[i++] = std::make_unique<T>();
+		});
+		return res;
+	}();
 
-	for(i = 0; i < n; i++) {
+	auto v = std::vector<A*>(n); // ensure contiguous memory
+	for(auto& vi : v) {
 		uint64_t val = from + rand() % (width + 1);
-		v.emplace_back(ts[val]);
+		vi = ts[val].get();
 	}
+	return v;
 }
 
-template<typename A>
-void shuffle(std::vector<std::shared_ptr<A>>& v) {
+template<typename V>
+void shuffle(V& v) {
 	auto rng = std::default_random_engine{};
 	std::shuffle(std::begin(v), std::end(v), rng);
 }
@@ -153,15 +154,15 @@ void print_average(float num) {
 float dummy = 0;
 
 template<typename A>
-void run_benchmarks(std::vector<std::shared_ptr<A>>& v) {
+void run_benchmarks(std::vector<A*>& v) {
 	float sum = 0;
 
 	// Cache warming
-	dummy += [&v]() -> uint64_t { uint64_t s = 0; for (auto& e: v) { auto *p = static_cast<A*>(e.get()); p ? ++s : ++dummy; } return s; }();
+	dummy += [&v] { uint64_t s = 0; for (auto& e: v) { auto *p = static_cast<A*>(e); p ? ++s : ++dummy; } return s; }();
 
 	printf("Base-line: static_cast\n");
 	printf("```\n");
-	dummy += run("-", [&v]() -> uint64_t { uint64_t s = 0; for (auto& e: v) { auto *p = static_cast<A*>(e.get()); p ? ++s : ++dummy; } return s; });
+	dummy += run("-", [&v] { uint64_t s = 0; for (auto& e: v) { auto *p = static_cast<A*>(e); p ? ++s : ++dummy; } return s; });
 	printf("```\n\n");
 
 	constexpr auto types_v = typename A::mux_type::types{} + tp::unit_v<Z>;
@@ -173,7 +174,7 @@ void run_benchmarks(std::vector<std::shared_ptr<A>>& v) {
 		auto res = run(typeid(T).name(), [&v] {
 			uint64_t s = 0;
 			for (auto& e: v) {
-				auto* p = dynamic_cast<T*>(e.get());
+				auto* p = dynamic_cast<T*>(e);
 				p ? ++s : ++dummy;
 			}
 			return s;
@@ -248,26 +249,16 @@ void run_benchmarks(std::vector<std::shared_ptr<A>>& v) {
 	printf("```\n");
 }
 
-std::vector<std::shared_ptr<deep::A>> vec_deep_successful;
-std::vector<std::shared_ptr<deep::A>> vec_deep_fails;
-
-std::vector<std::shared_ptr<shallow::A>> vec_shallow_successful;
-std::vector<std::shared_ptr<shallow::A>> vec_shallow_fails;
-
-std::vector<std::shared_ptr<deep::A>> vec_deep_mixed;
-std::vector<std::shared_ptr<shallow::A>> vec_shallow_mixed;
-std::vector<std::shared_ptr<balanced::A>> vec_balanced_mixed;
-
 TEST_CASE("[ddv] dynamic_cast benchmark") {
-	generate_data(vec_deep_successful, 6, 0);
-	generate_data(vec_deep_fails, 1, 0);
-	generate_data(vec_deep_mixed, 0, 6);
+	auto vec_deep_successful = generate_data<deep::A>(6, 0);
+	auto vec_deep_fails =      generate_data<deep::A>(1, 0);
+	auto vec_deep_mixed =      generate_data<deep::A>(0, 7);
 
-	generate_data(vec_shallow_successful, 6, 0);
-	generate_data(vec_shallow_fails, 1, 0);
-	generate_data(vec_shallow_mixed, 0, 6);
+	auto vec_shallow_successful = generate_data<shallow::A>(6, 0);
+	auto vec_shallow_fails =      generate_data<shallow::A>(1, 0);
+	auto vec_shallow_mixed =      generate_data<shallow::A>(0, 7);
 
-	generate_data(vec_balanced_mixed, 0, 6);
+	auto vec_balanced_mixed = generate_data<balanced::A>(0, 7);
 
 	// Run the benchmark loop 3 times:
 	// 1st: Warming up, discard.
