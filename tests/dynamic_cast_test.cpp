@@ -16,7 +16,6 @@
 #include <vector>
 #include <memory>
 #include <cstdlib>
-#include <typeinfo>
 #include <string>
 #include <functional>
 #include <random>
@@ -26,6 +25,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#define NAME_SUPPORT(cls_name) \
+virtual auto name() const -> std::string_view override { return #cls_name; }
 
 uint64_t max_num_ops = 0;
 
@@ -36,49 +37,59 @@ inline constexpr uint64_t num_usecs_per_sec = 1'000'000;
 namespace deep {
 	struct A; struct B; struct C; struct D; struct E; struct F; struct G; struct H;
 	using Mux = ddv::mux<A, B, C, D, E, F, G, H>;
-	struct A : ddv::visitable<A, Mux> { VISITOR_SUPPORT(); };
+	struct A : ddv::visitable<A, Mux> {
+		VISITOR_SUPPORT();
+		virtual auto name() const -> std::string_view { return "deep::A"; }
+	};
 
-	struct B : A { VISITOR_SUPPORT(); };
-	struct C : B { VISITOR_SUPPORT(); };
-	struct D : C { VISITOR_SUPPORT(); };
-	struct E : D { VISITOR_SUPPORT(); };
-	struct F : E { VISITOR_SUPPORT(); };
-	struct G : F { VISITOR_SUPPORT(); };
-	struct H : G { VISITOR_SUPPORT(); };
+	struct B : A { VISITOR_SUPPORT() NAME_SUPPORT(deep::B) };
+	struct C : B { VISITOR_SUPPORT() NAME_SUPPORT(deep::C) };
+	struct D : C { VISITOR_SUPPORT() NAME_SUPPORT(deep::D) };
+	struct E : D { VISITOR_SUPPORT() NAME_SUPPORT(deep::E) };
+	struct F : E { VISITOR_SUPPORT() NAME_SUPPORT(deep::F) };
+	struct G : F { VISITOR_SUPPORT() NAME_SUPPORT(deep::G) };
+	struct H : G { VISITOR_SUPPORT() NAME_SUPPORT(deep::H) };
 }
 
 namespace shallow {
 	struct A; struct B; struct C; struct D; struct E; struct F; struct G; struct H;
 	using Mux = ddv::mux<A, B, C, D, E, F, G, H>;
-	struct A : ddv::visitable<A, Mux> { VISITOR_SUPPORT(); };
+	struct A : ddv::visitable<A, Mux> {
+		VISITOR_SUPPORT();
+		virtual auto name() const -> std::string_view { return "shallow::A"; }
+	};
 
-	struct B : A { VISITOR_SUPPORT(); };
-	struct C : A { VISITOR_SUPPORT(); };
-	struct D : A { VISITOR_SUPPORT(); };
-	struct E : A { VISITOR_SUPPORT(); };
-	struct F : A { VISITOR_SUPPORT(); };
-	struct G : A { VISITOR_SUPPORT(); };
-	struct H : A { VISITOR_SUPPORT(); };
+	struct B : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::B) };
+	struct C : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::C) };
+	struct D : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::D) };
+	struct E : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::E) };
+	struct F : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::F) };
+	struct G : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::G) };
+	struct H : A { VISITOR_SUPPORT() NAME_SUPPORT(shallow::H) };
 }
 
 namespace balanced {
 	struct A; struct B; struct C; struct D; struct E; struct F; struct G; struct H;
 	using Mux = ddv::mux<A, B, C, D, E, F, G, H>;
-	struct A : ddv::visitable<A, Mux> { VISITOR_SUPPORT(); };
+	struct A : ddv::visitable<A, Mux> {
+		VISITOR_SUPPORT();
+		virtual auto name() const -> std::string_view { return "balanced::A"; }
+	};
 
-	struct B : A { VISITOR_SUPPORT(); };
-	struct C : B { VISITOR_SUPPORT(); };
-	struct D : B { VISITOR_SUPPORT(); };
+	struct B : A { VISITOR_SUPPORT() NAME_SUPPORT(balanced::B) };
+	struct C : B { VISITOR_SUPPORT() NAME_SUPPORT(balanced::C) };
+	struct D : B { VISITOR_SUPPORT() NAME_SUPPORT(balanced::D) };
 
-	struct E : A { VISITOR_SUPPORT(); };
-	struct F : E { VISITOR_SUPPORT(); };
-	struct G : E { VISITOR_SUPPORT(); };
-	struct H : E { VISITOR_SUPPORT(); };
+	struct E : A { VISITOR_SUPPORT() NAME_SUPPORT(balanced::E) };
+	struct F : E { VISITOR_SUPPORT() NAME_SUPPORT(balanced::F) };
+	struct G : E { VISITOR_SUPPORT() NAME_SUPPORT(balanced::G) };
+	struct H : E { VISITOR_SUPPORT() NAME_SUPPORT(balanced::H) };
 }
 
 // Same interface as A, but not related.
 struct Z {
-	uint64_t get() { return 1; };
+	void accept() {};
+	std::string_view name() const { return "Z"; }
 };
 
 void draw_bar(float percent, std::string s = "-") {
@@ -96,7 +107,7 @@ void draw_bar(float percent, std::string s = "-") {
 	}
 }
 
-uint64_t run(std::string label, std::function<uint64_t()> benchmark) {
+uint64_t run(std::string_view label, std::function<uint64_t()> benchmark) {
 	auto t1 = std::chrono::high_resolution_clock::now();
 	auto successes = benchmark();
 	auto t2 = std::chrono::high_resolution_clock::now();
@@ -106,8 +117,8 @@ uint64_t run(std::string label, std::function<uint64_t()> benchmark) {
 	if (max_num_ops == 0) max_num_ops = num_ops; // the first run will be 100%
 	auto percent = float(num_ops) / float(max_num_ops);
 	printf(
-		"%3s: %5.1f MHz (%3.0f%%) [%7lu] ",
-		label.c_str(),
+		"%11s: %5.1f MHz (%3.0f%%) [%7lu] ",
+		std::string(label).c_str(),
 		num_ops / num_usecs_per_sec,
 		percent * 100, successes
 	);
@@ -155,6 +166,7 @@ void run_benchmarks(std::vector<A*>& v) {
 
 	// Cache warming
 	dummy += [&v] { uint64_t s = 0; for (auto& e: v) { auto *p = static_cast<A*>(e); p ? ++s : ++dummy; } return s; }();
+	dummy += [&v] { uint64_t s = 0; for (auto& e: v) { auto *p = static_cast<A*>(e); p ? ++s : ++dummy; } return s; }();
 
 	printf("Base-line: static_cast\n");
 	printf("```\n");
@@ -167,7 +179,7 @@ void run_benchmarks(std::vector<A*>& v) {
 	printf("```\n");
 	sum = 0;
 	tp::for_each(types_v, [&]<typename T>(tp::unit<T>) {
-		auto res = run(typeid(T).name(), [&v] {
+		auto res = run(T{}.name(), [&v] {
 			uint64_t s = 0;
 			for (auto& e: v) {
 				auto* p = dynamic_cast<T*>(e);
@@ -182,11 +194,16 @@ void run_benchmarks(std::vector<A*>& v) {
 	print_average(sum, 8.0);
 	printf("```\n");
 
+	printf("Base-line: single virtual dispatch\n");
+	printf("```\n");
+	dummy += run("-v", [&v] { uint64_t s = 0; for (auto& e: v) { auto p = e->name(); p.size() ? ++s : ++dummy; } return s; });
+	printf("```\n\n");
+
 	printf("Implementation: `DDV fast`\n");
 	printf("```\n");
 	sum = 0;
 	tp::for_each(types_v, [&]<typename T>(tp::unit<T>) {
-		auto res = run(typeid(T).name(), [&v] {
+		auto res = run(T{}.name(), [&v] {
 			auto s = 0;
 			auto vtor = ddv::make_serial_visitor<typename A::mux_type>(
 				[&](T*) { ++s; },
@@ -206,7 +223,7 @@ void run_benchmarks(std::vector<A*>& v) {
 	printf("```\n");
 	sum = 0;
 	tp::for_each(types_v, [&]<typename T>(tp::unit<T>) {
-		auto res = run(typeid(T).name(), [&v] {
+		auto res = run(T{}.name(), [&v] {
 			auto s = 0;
 			auto vtor = ddv::serial{
 				[&](T*) { ++s; },
@@ -226,7 +243,7 @@ void run_benchmarks(std::vector<A*>& v) {
 	printf("```\n");
 	sum = 0;
 	tp::for_each(types_v, [&]<typename T>(tp::unit<T>) {
-		auto res = run(typeid(T).name(), [&v] {
+		auto res = run(T{}.name(), [&v] {
 			auto s = 0;
 			auto vtor = ddv::serial{
 				A::template make_visitor<T>([&] { ++s; }),
