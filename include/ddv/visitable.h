@@ -32,13 +32,10 @@ namespace ddv {
 
 		template<typename T>
 		constexpr auto visit(T&& value) {
-			auto v = serial{[&](auto&& value) {
-				if constexpr (std::is_void_v<decltype( Serial::visit(std::declval<T>()) )>)
-					Serial::visit(std::forward<T>(value));
-				else
-					res_ = Serial::visit(std::forward<T>(value));
-			}};
-			v.visit(std::forward<T>(value));
+			if constexpr (std::is_void_v<decltype( Serial::visit(std::declval<T>()) )>)
+				Serial::visit(std::forward<T>(value));
+			else
+				res_ = Serial::visit(std::forward<T>(value));
 		}
 
 		decltype(auto) operator*() { return std::move(res_); }
