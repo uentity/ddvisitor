@@ -80,20 +80,20 @@ TEST_CASE("[visitable] core", "[ddv]") {
 	static_assert(!ddv::is_virtual_base_of<Derived, GrandBase>);
 
 	// test `visitable`
-	auto isv1 = Base::make_visitor<GrandT, std::int64_t, std::string>(
+	auto isv1 = Base::make_filter<GrandT, std::int64_t, std::string>(
 		[](auto) { return Match::One; }
 	);
 	static_assert(ddv::is_serial_visitor<decltype(isv1)>);
-	auto isv2 = Base::make_visitor<tp::tpack<GrandT<std::int64_t>, GrandT<std::string>>>(
+	auto isv2 = Base::make_filter<tp::tpack<GrandT<std::int64_t>, GrandT<std::string>>>(
 		[](auto) { return Match::One; }
 	);
 	static_assert(ddv::is_serial_visitor<decltype(isv2)>);
-	auto isv3 = Base::make_visitor<GrandT, tp::tpack<std::int64_t, std::string>>(
+	auto isv3 = Base::make_filter<GrandT, tp::tpack<std::int64_t, std::string>>(
 		[](auto) { return Match::One; }
 	);
 	static_assert(ddv::is_serial_visitor<decltype(isv3)>);
 
-	auto dv = Base::make_visitor<GrandT, double>(
+	auto dv = Base::make_filter<GrandT, double>(
 		[](auto) { return Match::Two; }
 	);
 	using dv_t = decltype(dv);
@@ -106,7 +106,7 @@ TEST_CASE("[visitable] core", "[ddv]") {
 	static_assert(!std::is_invocable_v<dv_t, Base*, int>);
 	static_assert(!std::is_invocable_v<dv_t, Base*, decltype(isv3)>);
 
-	auto bv = Base::make_visitor([](GrandT<bool>*) { return Match::Three; });
+	auto bv = Base::make_filter([](GrandT<bool>*) { return Match::Three; });
 	static_assert(!ddv::is_serial_visitor<decltype(bv)>);
 
 	const auto check_gt_visitor = [&](auto gt_visitor) {
@@ -145,11 +145,11 @@ TEST_CASE("[visitable] void callables with dynamic matching") {
 		return ddv::none;
 	}};
 	auto vvv = ddv::serial{
-		Base::make_visitor<GrandT, bool, std::int64_t>(
+		Base::make_filter<GrandT, bool, std::int64_t>(
 			// share `one_shot` between `bool` & `int64_t` type filters
 			std::ref(one_shot)
 		),
-		Base::make_visitor<GrandT, bool>(
+		Base::make_filter<GrandT, bool>(
 			[&] { res = Match::Two; }
 		),
 		[&] { res = Match::Err; },
@@ -179,7 +179,7 @@ TEST_CASE("[visitable] void callables with dynamic matching") {
 TEST_CASE("[visitable] const types support") {
 	// test const types visitor
 	auto const_vvv = ddv::serial{
-		Base::make_visitor<GrandT, bool, std::int64_t>([&] {
+		Base::make_filter<GrandT, bool, std::int64_t>([&] {
 			return Match::One;
 		}, ddv::const_),
 		[&] { return Match::Err; }
@@ -194,22 +194,22 @@ TEST_CASE("[visitable] recursive visitor") {
 	// test visitor with self reference
 	auto res = Match::None;
 	auto self_ref_v = ddv::serial{
-		Base::make_visitor([&](GrandT<std::int64_t>*) {
+		Base::make_filter([&](GrandT<std::int64_t>*) {
 			res = Match::One;
 		}),
-		Base::make_visitor([&](GrandT<std::string>*) {
+		Base::make_filter([&](GrandT<std::string>*) {
 			res = Match::Two;
 		}),
 		// specify type of the first argument as pointer 'most common' parent class
 		// when type to filter is provided as template param and self-reference visitor is required
 		// [NOTE] filter for multiple types + self-reference visitor *will not work* atm
-		Base::make_visitor<GrandT, double>([&](Base*, BaseVisitor& self) {
+		Base::make_filter<GrandT, double>([&](Base*, BaseVisitor& self) {
 			// forward to builtin int64_t scalar handler
 			gt_int64.accept(self);
 			// alternatively:
 			//self.visit(&gt_int64);
 		}),
-		Base::make_visitor<GrandT, bool>([&](Base*, BaseVisitor& self) {
+		Base::make_filter<GrandT, bool>([&](Base*, BaseVisitor& self) {
 			// forward to builtin int64_t scalar handler
 			gt_int64.accept(self);
 		}),

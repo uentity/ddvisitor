@@ -246,7 +246,7 @@ void run_benchmarks(std::vector<A*>& v) {
 		auto res = run(T{}.name(), [&v] {
 			auto s = 0;
 			auto vtor = ddv::serial{
-				A::template make_visitor<T>([&] { ++s; }),
+				A::template make_filter<T>([&] { ++s; }),
 				[] { ++dummy; }
 			};
 			for (auto& e: v) {

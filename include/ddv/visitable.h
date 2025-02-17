@@ -93,71 +93,69 @@ namespace ddv {
 		// produces callable that accepts pointer to Ancestor and calls `f` iff argument actually points to any of `Ts...`
 		// [NOTE] const/non-const Ts makes difference because type filter works by comparing type IDs
 		template<typename... Ts, typename F>
-		static constexpr auto make_visitor(F&& f) {
-			return make_visitor(std::forward<F>(f), strip(tp::tpack_v<Ts...>));
+		static constexpr auto make_filter(F&& f) {
+			return make_filter(std::forward<F>(f), strip(tp::tpack_v<Ts...>));
 		}
 
 		// same as above but for capturing multiple specializations of template type `U<T>`
 		template<template<typename...> typename U, typename T, typename... Ts, typename F>
-		static constexpr auto make_visitor(F&& f) {
+		static constexpr auto make_filter(F&& f) {
 			// if `T` is tpack - treat it as list of template args to generate specializations of `U`
 			if constexpr (tp::is_tpack_v<T>)
-				return make_visitor(
+				return make_filter(
 					std::forward<F>(f),
 					transform(T{}, []<typename X>(tp::unit<X>) { return tp::unit_v<U<X>>; })
 				);
 			else
-				return make_visitor(std::forward<F>(f), tp::tpack_v<U<T>, U<Ts>...>);
+				return make_filter(std::forward<F>(f), tp::tpack_v<U<T>, U<Ts>...>);
 		}
 
 		// generates specializations `const U<T>...`
 		// code duplication is unfortunate, but it's a tradeoff to prevent extra indirection layers
 		template<template<typename...> typename U, typename T, typename... Ts, typename F>
-		static constexpr auto make_visitor(F&& f, const_tag) {
+		static constexpr auto make_filter(F&& f, const_tag) {
 			if constexpr (tp::is_tpack_v<T>)
-				return make_visitor(
+				return make_filter(
 					std::forward<F>(f),
 					transform(T{}, []<typename X>(tp::unit<X>) { return tp::unit_v<const U<X>>; })
 				);
 			else
-				return make_visitor(std::forward<F>(f), tp::tpack_v<const U<T>, const U<Ts>...>);
+				return make_filter(std::forward<F>(f), tp::tpack_v<const U<T>, const U<Ts>...>);
 		}
 
 	private:
 		template<typename F, typename... Ts>
-		static constexpr auto make_visitor(F&& f, tp::tpack<Ts...> ts) {
+		static constexpr auto make_filter(F&& f, tp::tpack<Ts...> ts) {
 			constexpr auto n = size(ts);
 			// if no types are explicitly requested -- infer one from F's first argument
 			if constexpr (n == 0)
-				return do_make_visitor(std::forward<F>(f));
+				return do_make_filter(std::forward<F>(f));
 			// no need to wrap single cherry capture lambda with serial visitor, return it directly
 			else if constexpr (n == 1)
-				return do_make_visitor(std::forward<F>(f), head(ts));
+				return do_make_filter(std::forward<F>(f), head(ts));
 			// otherwise build serial visitor containing lambda for each requested type
 			else
-				return serial{
-					do_make_visitor(std::forward<F>(f), tp::unit_v<Ts>)...,
-				};
+				return serial{do_make_filter(std::forward<F>(f), tp::unit_v<Ts>)...};
 		}
 
 		template<typename F, typename Cherry = void>
-		static constexpr auto do_make_visitor(F&& f, tp::unit<Cherry> cherry = void_value) {
+		static constexpr auto do_make_filter(F&& f, tp::unit<Cherry> cherry = void_value) {
 			if constexpr (util::can_deduce_callable<F>) {
 				using Finfo = util::deduce_callable<F>;
 				if constexpr (std::is_void_v<Cherry>)
-					return make_cherry_visitor(std::forward<F>(f), typename Finfo::args{});
+					return make_cherry_picker(std::forward<F>(f), typename Finfo::args{});
 				else
-					return make_cherry_visitor(std::forward<F>(f), cherry + tail(typename Finfo::args{}));
+					return make_cherry_picker(std::forward<F>(f), cherry + tail(typename Finfo::args{}));
 			}
 			else {
 				static_assert(!std::is_void_v<Cherry>, "Cannot deduce type to filter from 1st callable argument. "
 					"Specify it explicitly either as `make_visitor()` template param or as type of 1st argument.");
-				return make_cherry_visitor(std::forward<F>(f), cherry);
+				return make_cherry_picker(std::forward<F>(f), cherry);
 			}
 		}
 
 		template<typename F, typename Cherry, typename... Ts>
-		static constexpr auto make_cherry_visitor(F&& f, tp::tpack<Cherry, Ts...>) {
+		static constexpr auto make_cherry_picker(F&& f, tp::tpack<Cherry, Ts...>) {
 			using cherry_t = std::conditional_t<std::is_pointer_v<Cherry>, std::remove_pointer_t<Cherry>, Cherry>;
 			using cherry_ptr_t = std::add_pointer_t<cherry_t>;
 			using bait_ptr_t = std::conditional_t<std::is_const_v<cherry_t>, const Ancestor*, Ancestor*>;
