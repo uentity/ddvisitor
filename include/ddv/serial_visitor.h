@@ -65,7 +65,7 @@ namespace ddv {
 
 	template<typename Args, typename Params>
 	concept args_match_params = decltype(detail::args_match_params(
-		transform<std::decay>(Args{}), transform<std::decay>(Params{})
+		tp::transform<std::decay>(Args{}), tp::transform<std::decay>(Params{})
 	))::value;
 
 	template<typename F, typename... Args>
@@ -142,59 +142,59 @@ namespace ddv {
 		// checks whether `F` accepts a reference to visitor mux type as a 2nd argument, if not - return `void_value`
 		// otherwise return `visitor<Mux, ref>` if `Complete` is true - for calling `F`
 		// and type of 2nd argument if `Complete` is false -- for `can_visit` check
-		template<typename F, bool Complete>
+		template<typename F, bool Complete, size_t Pos>
 		static constexpr auto make_ref_visitor_type() {
 			if constexpr (util::can_deduce_callable<F>) {
 				using Finfo = util::deduce_callable<F>;
-				if constexpr (Finfo::nargs > 1) {
-					using second_arg = typename Finfo::template ith_arg<1>;
-					static_assert(
-						is_mux<second_arg> && std::is_lvalue_reference_v<second_arg>,
-						"2nd argument of matched callable must be a reference to the visitor interface (multiplexer)"
-					);
-					using Mux = std::remove_cvref_t<second_arg>;
+				if constexpr (Finfo::nargs > Pos) {
+					using ref_arg = typename Finfo::template ith_arg<Pos>;
 					if constexpr (Complete)
-						return tp::unit_v<visitor<Mux, ref>>;
-					else
-						return tp::unit_v<second_arg>;
+						return tp::unit_v<visitor<std::remove_cvref_t<ref_arg>, ref>>;
+					else {
+						static_assert(
+							is_mux<ref_arg> && std::is_lvalue_reference_v<ref_arg>,
+							"Last parameter of matched callable must be a reference to the visitor interface (multiplexer)"
+						);
+						return tp::unit_v<ref_arg>;
+					}
 				}
 				else return void_value;
 			}
 			else return void_value;
 		}
 
-		template<typename F, bool Complete>
-		using ref_visitor_type = typename decltype(make_ref_visitor_type<F, Complete>())::type;
+		template<typename F, bool Complete, size_t Pos>
+		using ref_visitor_type = typename decltype(make_ref_visitor_type<F, Complete, Pos>())::type;
 
 		// calc final decision whether F matches (can be called with) the value of type T being visited
-		template<typename F, typename T>
+		template<typename F, typename... Ts>
 		static constexpr bool is_matched = std::invocable<F>
-			|| strict_callable<F, T>
-			|| strict_callable<F, T, ref_visitor_type<F, false>>;
+			|| strict_callable<F, Ts...>
+			|| strict_callable<F, Ts..., ref_visitor_type<F, false, sizeof...(Ts)>>;
 
-		template<typename T, typename... Gs>
-		static constexpr bool can_visit_impl(tp::unit<T>, std::tuple<Gs...>* gs = nullptr) {
+		template<typename T, typename... Args, typename... Gs>
+		static constexpr bool can_visit_impl(tp::unit<T>, tp::tpack<Args...> args, std::tuple<Gs...>* gs) {
 			if constexpr (is_optional<T>)
-				return can_visit_impl(tp::unit_v<decltype(*std::declval<T>())>, gs);
+				return can_visit_impl(tp::unit_v<decltype(*std::declval<T>())>, args, gs);
 			else if constexpr (is_variant<T>)
-				return can_visit_impl<Gs...>(nut_v<T>);
+				return can_visit_impl<Gs...>(nut_v<T>, args);
 			else
 				// true if T can be visited by at least one callable
-				return is_void<T> || (is_matched<Gs, bind_lvalue_ref<T>> || ...);
+				return is_void<T> || (is_matched<Gs, bind_lvalue_ref<T>, bind_lvalue_ref<Args>...> || ...);
 		}
 
-		template<typename... Gs, typename... Ts>
-		static constexpr bool can_visit_impl(tp::unit<std::variant<Ts...>>) {
+		template<typename... Gs, typename... Ts, typename... Args>
+		static constexpr bool can_visit_impl(tp::unit<std::variant<Ts...>>, tp::tpack<Args...> args) {
 			// returns true only if can visit each alternative of variant type T
-			return (can_visit_impl<Ts, Gs...>(tp::unit_v<Ts>) && ...);
+			return (can_visit_impl(tp::unit_v<Ts>, args, static_cast<std::tuple<Gs...>*>(nullptr)) && ...);
 		}
 
 		storage_t fs_;
 
 	public:
 		// tests if value of type `F` can be visited by this serial visitor (there is at least one matching callable)
-		template<typename T>
-		static constexpr bool can_visit = can_visit_impl(tp::unit_v<T>, (storage_t*)nullptr);
+		template<typename T, typename... Args>
+		static constexpr bool can_visit = can_visit_impl(tp::unit_v<T>, tp::tpack_v<Args...>, (storage_t*)nullptr);
 
 		// converting ctor to perfectly forward callables into internal storage
 		template<typename... Gs>
@@ -386,7 +386,7 @@ namespace ddv {
 					else if constexpr (std::invocable<F, X>)
 						return f(std::forward<X>(x));
 					else {
-						auto self_ref = ref_visitor_type<F, true>(*self);
+						auto self_ref = ref_visitor_type<F, true, 1>(*self);
 						return f(std::forward<X>(x), self_ref);
 					}
 				};
