@@ -123,9 +123,11 @@ namespace ddv {
 		static constexpr auto chain_length = std::tuple_size_v<storage_t>;
 
 		template<typename T>
-		using bind_lvalue_ref = std::conditional_t<
+		using bind_lvalue_ref = std::conditional<
 			std::is_lvalue_reference_v<T>, T, std::add_lvalue_reference_t<std::add_const_t<T>>
 		>;
+		template<typename T>
+		using bind_lvalue_ref_t = typename bind_lvalue_ref<T>::type;
 
 		// forward calls to an instance of `serial` stored by reference
 		// returned value is lost because `ref::visit()` has void return type
@@ -146,7 +148,7 @@ namespace ddv {
 		static constexpr auto make_ref_visitor_type() {
 			if constexpr (util::can_deduce_callable<F>) {
 				using Finfo = util::deduce_callable<F>;
-				if constexpr (Finfo::nargs > Pos) {
+				if constexpr (Pos < Finfo::nargs) {
 					using ref_arg = typename Finfo::template ith_arg<Pos>;
 					if constexpr (Complete)
 						return tp::unit_v<visitor<std::remove_cvref_t<ref_arg>, ref>>;
@@ -180,7 +182,7 @@ namespace ddv {
 				return can_visit_impl<Gs...>(nut_v<T>, args);
 			else
 				// true if T can be visited by at least one callable
-				return is_void<T> || (is_matched<Gs, bind_lvalue_ref<T>, bind_lvalue_ref<Args>...> || ...);
+				return is_void<T> || (is_matched<Gs, bind_lvalue_ref_t<T>, bind_lvalue_ref_t<Args>...> || ...);
 		}
 
 		template<typename... Gs, typename... Ts, typename... Args>
@@ -204,51 +206,49 @@ namespace ddv {
 		// call operator is only enabled if passed value can be visited
 		// supports optionals and variants auto-unpacking
 		// non-simplified return type to pass all possible results, including `ok` and `none`
-		template<typename T>
-			requires can_visit<T>
-		constexpr auto operator()(T&& value) {
-			return do_visit<false>(std::forward<T>(value));
+		template<typename T, typename... Args>
+			requires can_visit<T, Args...>
+		constexpr auto operator()(T&& value, Args&&... args) {
+			return do_visit<false>(std::forward<T>(value), std::forward<Args>(args)...);
 		}
 
 		// public interface to `operator()` above to be used by humans
 		// always enabled, produces readable error if value can't be visited, don't return void values
 		// auto simplifies result type `optional<variant<void_value_t, T>>` -> `optional<T>`
 		// downside: cannot distinguish between `ok` and `none` in returned value, always will be `none`
-		template<typename T>
-		constexpr auto visit(T&& value) {
+		template<typename T, typename... Args>
+		constexpr auto visit(T&& value, Args&&... args) {
 			static_assert(
-				can_visit<T>,
+				can_visit<T, Args...>,
 				"There is no callable accepting given value. "
 				"You can append `noop` to the chain of callables to provide default fallback."
 			);
 			// pass Simplify = true flag that strips `void_value_t` from result type
 			// like `optional<variant<void_value_t, T>>` -> `optional<T>`
-			using res_t = decltype( do_visit<true>(std::declval<T>()) );
+			using res_t = decltype( do_visit<true>(std::declval<T>(), std::declval<Args>()...) );
 			if constexpr (is_void<res_t>)
-				do_visit<true>(std::forward<T>(value));
+				do_visit<true>(std::forward<T>(value), std::forward<Args>(args)...);
 			else
-				return do_visit<true>(std::forward<T>(value));
+				return do_visit<true>(std::forward<T>(value), std::forward<Args>(args)...);
 		}
 
 		// effectively calls `value.visit(*this)`
 		template<typename T>
 		constexpr auto apply(T&& value) {
-			return unpack_and_invoke(
-				std::forward<T>(value),
+			return unpack_and_invoke<false, true>(
 				[this](auto&& x) { return x.visit(*this); },
-				std::true_type{}
+				std::forward<T>(value)
 			);
 		}
 
 	private:
-		template<bool Simplify, typename T>
-		constexpr auto do_visit(T&& value) {
-			return unpack_and_invoke<Simplify>(
-				std::forward<T>(value),
-				[&](auto&& x) {
-					return invoke_first_match<0, Simplify>(std::forward<decltype(x)>(x));
+		template<bool Simplify, typename T, typename... Args>
+		constexpr auto do_visit(T&& value, Args&&... args) {
+			return unpack_and_invoke<Simplify, false>(
+				[&]<typename U>(U&& x) {
+					return invoke_first_match<0, Simplify>(std::forward<U>(x), std::forward<Args>(args)...);
 				},
-				std::false_type{}
+				std::forward<T>(value)
 			);
 		}
 
@@ -333,25 +333,23 @@ namespace ddv {
 		}
 
 		// recursively unpack optional/variant, optionally deref pointer-likes and then call `f` on extracted value
-		template<bool Simplify = false, typename T, typename F, bool DerefPtrs>
-		static constexpr auto unpack_and_invoke(T&& value, F&& f, std::bool_constant<DerefPtrs> dp) {
+		template<bool Simplify = false, bool DerefPtrs, typename F, typename T>
+		static constexpr auto unpack_and_invoke(F&& f, T&& value) {
 			if constexpr (is_void<T>)
 				return;
 			else if constexpr (is_optional<T> || (DerefPtrs && is_pointer_like<T>)) {
-				using res_t = decltype( unpack_and_invoke(*std::declval<T>(), std::declval<F>(), dp) );
+				using res_t = decltype(unpack_and_invoke<false, DerefPtrs>(std::declval<F>(), *std::declval<T>()));
 				if (value)
-					return unpack_and_invoke(*std::forward<T>(value), std::forward<F>(f), dp);
+					return unpack_and_invoke<false, DerefPtrs>(std::forward<F>(f), *std::forward<T>(value));
 				else
 					return make_result<res_t>(none);
 			}
 			else if constexpr (is_variant<T>) {
-				const auto do_invoke = [&f, dp]<typename X>(X&& x) {
-					return unpack_and_invoke(std::forward<X>(x), std::forward<F>(f), dp);
+				const auto do_invoke = [&f]<typename X>(X&& x) {
+					return unpack_and_invoke<false, DerefPtrs>(std::forward<F>(f), std::forward<X>(x));
 				};
 				// calculate type to return by visiting every value alternative
-				using res_value_t = decltype(
-					calc_variant_response<Simplify, decltype(do_invoke)>(nut_v<T>)
-				)::type;
+				using res_value_t = decltype( calc_variant_response<Simplify, decltype(do_invoke)>(nut_v<T>) )::type;
 
 				// unpack variant, visit value & convert result to calculated type
 				return std::visit([&]<typename V>(V&& x) {
@@ -368,64 +366,64 @@ namespace ddv {
 		}
 
 		// ---------------- matched fn invoke
-		template<typename T, std::size_t... Is>
-		static constexpr auto find_match_idx(std::index_sequence<Is...>) {
+		template<typename... Ts, std::size_t... Is>
+		static constexpr auto find_match_idx(tp::tpack<Ts...>, std::index_sequence<Is...>) {
 			std::size_t res = chain_length;
-			(void)((is_matched<Fi<Is>, T> ? res = Is, false : true) && ...);
+			(void)((is_matched<Fi<Is>, Ts...> ? res = Is, false : true) && ...);
 			return res;
 		}
 
-		template<std::size_t From = 0, bool Simplify = false, typename T>
-		constexpr auto invoke_first_match(T&& value) {
-			using U = bind_lvalue_ref<T>;
-			constexpr auto match_idx = find_match_idx<U>(bounded_index_sequence<From, chain_length>);
+		template<std::size_t From = 0, bool Simplify = false, typename... Ts>
+		constexpr auto invoke_first_match(Ts&&... values) {
+			constexpr auto Us = tp::transform<bind_lvalue_ref>(tp::tpack_v<Ts...>);
+			constexpr auto match_idx = find_match_idx(Us, bounded_index_sequence<From, chain_length>);
 			if constexpr (match_idx < chain_length) {
-				constexpr auto invoke_matched_fn = []<typename F, typename X>(F&& f, X&& x, serial* self) {
+				constexpr auto invoke_matched_fn = []<typename F, typename... Xs>(serial* self, F&& f, Xs&&... xs) {
 					if constexpr (std::invocable<F>)
 						return f();
-					else if constexpr (std::invocable<F, X>)
-						return f(std::forward<X>(x));
+					else if constexpr (std::invocable<F, Xs...>)
+						return f(std::forward<Xs>(xs)...);
 					else {
-						auto self_ref = ref_visitor_type<F, true, 1>(*self);
-						return f(std::forward<X>(x), self_ref);
+						auto self_ref = ref_visitor_type<F, true, sizeof...(Xs)>(*self);
+						return f(std::forward<Xs>(xs)..., self_ref);
 					}
 				};
-				using ret_t = call_result_t<decltype(invoke_matched_fn), Fi<match_idx>, U, serial*>;
+				using ret_t = call_result_t<decltype(invoke_matched_fn), serial*, Fi<match_idx>, bind_lvalue_ref_t<Ts>...>;
 
 				if constexpr (std::is_void_v<ret_t>)
-					invoke_matched_fn(std::get<match_idx>(fs_), std::forward<T>(value), this);
+					invoke_matched_fn(this, std::get<match_idx>(fs_), std::forward<Ts>(values)...);
 				else {
 					using value_t = deduce_value_t<ret_t>;
 					using res_t = make_result_type<Simplify, value_t>;
 					// if matched visitor functor returns `optional` -- enable runtime matches processing branch
 					if constexpr (is_optional<ret_t>) {
 						// calculate final result type with possible next match invoke
-						using next_ret_t = decltype( invoke_first_match<match_idx + 1>(std::declval<T>()) );
+						using next_ret_t = decltype(invoke_first_match<match_idx + 1>(std::declval<Ts>()...));
 						constexpr bool next_match_found = !std::is_same_v<next_ret_t, std::nullopt_t>;
 						if constexpr (next_match_found) {
 							using next_value_t = deduce_value_t<deduce_result_t<next_ret_t>>;
 							using final_res_t = deduce_result_t<make_merged_type<Simplify, value_t, next_value_t>>;
 
 							// invoke current matched functor (pass value by reference to prevent stealing)
-							if (auto r = invoke_matched_fn( std::get<match_idx>(fs_), static_cast<U>(value), this ))
+							if (auto r = invoke_matched_fn(this, std::get<match_idx>(fs_), static_cast<bind_lvalue_ref_t<Ts>>(values)...))
 								return make_result<final_res_t>(*std::move(r));
 							// if it haven't processed the value, invoke next match
 							else {
 								if constexpr (std::is_void_v<next_ret_t>) {
-									invoke_first_match<match_idx + 1>(std::forward<T>(value));
+									invoke_first_match<match_idx + 1>(std::forward<Ts>(values)...);
 									return make_result<final_res_t>(ok);
 								}
 								else
-									return make_result<final_res_t>( invoke_first_match<match_idx + 1>(std::forward<T>(value)) );
+									return make_result<final_res_t>(invoke_first_match<match_idx + 1>(std::forward<Ts>(values)...));
 							}
 						}
 						// current match returned optional, but next match wasn't found
 						else
-							return make_result<res_t>( invoke_matched_fn(std::get<match_idx>(fs_), std::forward<T>(value), this) );
+							return make_result<res_t>(invoke_matched_fn(this, std::get<match_idx>(fs_), std::forward<Ts>(values)...));
 					}
 					// otherwise we have static match - callable returned non-optional result
 					else
-						return make_result<res_t>( invoke_matched_fn(std::get<match_idx>(fs_), std::forward<T>(value), this) );
+						return make_result<res_t>(invoke_matched_fn(this, std::get<match_idx>(fs_), std::forward<Ts>(values)...));
 				}
 			}
 			// indicate that no more matches found
