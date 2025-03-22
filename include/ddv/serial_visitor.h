@@ -152,13 +152,14 @@ namespace ddv {
 					using ref_arg = typename Finfo::template ith_arg<Pos>;
 					if constexpr (Complete)
 						return tp::unit_v<visitor<std::remove_cvref_t<ref_arg>, ref>>;
-					else {
+					else if constexpr (is_mux<ref_arg>) {
 						static_assert(
-							is_mux<ref_arg> && std::is_lvalue_reference_v<ref_arg>,
-							"Last parameter of matched callable must be a reference to the visitor interface (multiplexer)"
+							std::is_lvalue_reference_v<ref_arg>,
+							"Self reference must be an lvalue reference to the visitor interface (ddv::mux)"
 						);
 						return tp::unit_v<ref_arg>;
 					}
+					else return void_value;
 				}
 				else return void_value;
 			}
