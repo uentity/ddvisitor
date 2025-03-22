@@ -233,3 +233,36 @@ TEST_CASE("[serial visitor] strict call policy", "[ddv]") {
 	CHECK(*v.visit((float)42) == Match::Two);
 	CHECK(*v.visit(42.) == Match::One);
 }
+
+TEST_CASE("[serial visitor] extra args", "[ddv]") {
+	auto r = Match::None;
+	auto v = ddv::serial{
+		[&](double x, int y) -> int { r = Match::One; return x + y; },
+		[&](double, const char*) { r = Match::Two; return r; },
+		// it's essential to have this callable before (double, auto)
+		// because (double, auto) cannot be inspected => doesn't have 'strict' call policy
+		[&](int x, int, ddv::mux<int>& self) { r = Match::Four; self.visit(&x); },
+		[&](double, auto) { r = Match::Three; return value1{}; },
+		[&] { r = Match::Five; return value2{}; }
+	};
+
+	static_assert(tp::unit_v<decltype(v.visit(double{}))> == tp::unit_v<std::optional<value2>>);
+
+	static_assert(tp::unit_v<decltype(v.visit(double{}, int{}))> == tp::unit_v<std::optional<int>>);
+	CHECK(*v.visit(42., 42) == 84);
+	CHECK(r == Match::One);
+
+	static_assert(tp::unit_v<decltype(v.visit(double{}, (const char*)nullptr))> == tp::unit_v<std::optional<Match>>);
+	CHECK(*v.visit(42., "Hello") == Match::Two);
+	auto&& s = "World";
+	CHECK(*v.visit(42., s) == Match::Two);
+	CHECK(r == Match::Two);
+
+	static_assert(tp::unit_v<decltype(v.visit(double{}, std::byte{}))> == tp::unit_v<std::optional<value1>>);
+	v.visit(42., std::byte{0});
+	CHECK(r == Match::Three);
+
+	static_assert(tp::unit_v<decltype(v.visit(int{}, int{}))> == tp::unit_v<void>);
+	v.visit(42, 42);
+	CHECK(r == Match::Five);
+}
