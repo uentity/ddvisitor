@@ -22,27 +22,41 @@ namespace ddv {
 	/////////////////////////////////////////////////////////////////////////
 	// `serial` wrapper that can store demux result calculated in void `T->accept()` call
 	// intended to be used with visitable types and `serial::apply()`
-	template<typename Mux, typename Serial>
-	struct visitable_demux : Serial {
+	template<typename Mux, typename Serial, typename... Args>
+		requires is_serial_visitor<Serial>
+	struct visitable_demux : private Serial {
 		// [NOTE] can't just inherit ctors like `using Serial::Serial;`
 		// copy/move ctors aren't inherited => initializing `visitable_demux` with instance of `serial` would fail
-		template<typename... Ts>
-			requires std::constructible_from<Serial, Ts...>
-		visitable_demux(Ts&&... args) : Serial(std::forward<Ts>(args)...) {}
+		template<typename... Fs>
+			requires std::constructible_from<Serial, Fs...>
+		visitable_demux(std::tuple<Args...> args, Fs&&... fs)
+			: Serial(std::forward<Fs>(fs)...), args_{std::move(args)}
+		{}
+
+		template<typename... Fs>
+			requires (sizeof...(Args) == 0)
+		visitable_demux(Fs&&... fs) : visitable_demux(std::tuple<>{}, std::forward<Fs>(fs)...) {}
 
 		template<typename T>
 		constexpr auto visit(T&& value) {
-			if constexpr (std::is_void_v<decltype( Serial::visit(std::declval<T>()) )>)
-				Serial::visit(std::forward<T>(value));
+			const auto do_visit = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+				return Serial::visit(std::forward<T>(value), std::get<Is>(std::move(args_))...);
+			};
+
+			constexpr auto Is = std::index_sequence_for<Args...>{};
+			if constexpr (std::is_void_v<decltype(do_visit(Is))>)
+				do_visit(Is);
 			else
-				res_ = Serial::visit(std::forward<T>(value));
+				res_ = do_visit(Is);
 		}
 
-		decltype(auto) operator*() { return std::move(res_); }
+		decltype(auto) operator*() noexcept { return std::move(res_); }
 
 	private:
+		std::tuple<Args...> args_;
+
 		using demux_outcome = decltype(
-			std::declval<Serial>().visit(std::declval< tp::make<std::variant, typename Mux::visited_types> >())
+			std::declval<Serial>().visit(std::declval<tp::make<std::variant, typename Mux::visited_types>>())
 		);
 		// result_type =
 		// 1. void_value_t, if Serial result is void for all visited types from Mux
@@ -56,11 +70,11 @@ namespace ddv {
 
 	/////////////////////////////////////////////////////////////////////////
 	// make visitor with given multiplexer interface and `serial` demultiplexer
-	template<typename Mux, typename... Fs>
-	constexpr auto make_visitable_visitor(Fs&&... fs) {
-		using Serial = decltype( serial{std::declval<Fs>()...} );
-		using Demux = visitable_demux<Mux, Serial>;
-		return visitor<Mux, Demux>(std::forward<Fs>(fs)...);
+	template<typename Mux, typename... Args, typename... Fs>
+	constexpr auto make_visitable_visitor(std::tuple<Args...>&& args, Fs&&... fs) noexcept {
+		using Serial = decltype(serial{std::declval<Fs>()...});
+		using Demux = visitable_demux<Mux, Serial, Args...>;
+		return visitor<Mux, Demux>(std::move(args), std::forward<Fs>(fs)...);
 	}
 
 	/////////////////////////////////////////////////////////////////////////
@@ -74,20 +88,32 @@ namespace ddv {
 		virtual auto accept(mux_type&) -> void = 0;
 		virtual auto accept(const_mux_type&) const -> void = 0;
 
-		template<typename... Fs>
-		auto visit(Fs&&... fs) {
-			auto v = make_visitable_visitor<mux_type>(std::forward<Fs>(fs)...);
+		template<typename F, typename... Xs>
+			requires is_serial_visitor<F>
+		auto visit(F&& f, Xs&&... xs) {
+			auto v = make_visitable_visitor<mux_type>(std::forward_as_tuple(std::forward<Xs>(xs)...), std::forward<F>(f));
 			this->accept(v);
 			if constexpr (!decltype(v)::is_result_void)
 				return *v;
 		}
 
-		template<typename... Fs>
-		auto visit(Fs&&... fs) const {
-			auto v = make_visitable_visitor<const_mux_type>(std::forward<Fs>(fs)...);
+		template<typename F, typename... Fs>
+		auto visit(F&& f, Fs&&... fs) {
+			return visit(serial{std::forward<F>(f), std::forward<Fs>(fs)...});
+		}
+
+		template<typename F, typename... Xs>
+			requires is_serial_visitor<F>
+		auto visit(F&& f, Xs&&... xs) const {
+			auto v = make_visitable_visitor<const_mux_type>(std::forward_as_tuple(std::forward<Xs>(xs)...), std::forward<F>(f));
 			this->accept(v);
 			if constexpr (!decltype(v)::is_result_void)
 				return *v;
+		}
+
+		template<typename F, typename... Fs>
+		auto visit(F&& f, Fs&&... fs) const {
+			return visit(serial{std::forward<F>(f), std::forward<Fs>(fs)...});
 		}
 
 		// produces callable that accepts pointer to Ancestor and calls `f` iff argument actually points to any of `Ts...`
@@ -104,7 +130,7 @@ namespace ddv {
 			if constexpr (tp::is_tpack_v<T>)
 				return make_filter(
 					std::forward<F>(f),
-					transform(T{}, []<typename X>(tp::unit<X>) { return tp::unit_v<U<X>>; })
+					tp::transform(T{}, []<typename X>(tp::unit<X>) { return tp::unit_v<U<X>>; })
 				);
 			else
 				return make_filter(std::forward<F>(f), tp::tpack_v<U<T>, U<Ts>...>);
@@ -117,7 +143,7 @@ namespace ddv {
 			if constexpr (tp::is_tpack_v<T>)
 				return make_filter(
 					std::forward<F>(f),
-					transform(T{}, []<typename X>(tp::unit<X>) { return tp::unit_v<const U<X>>; })
+					tp::transform(T{}, []<typename X>(tp::unit<X>) { return tp::unit_v<const U<X>>; })
 				);
 			else
 				return make_filter(std::forward<F>(f), tp::tpack_v<const U<T>, const U<Ts>...>);
@@ -126,13 +152,13 @@ namespace ddv {
 	private:
 		template<typename F, typename... Ts>
 		static constexpr auto make_filter(F&& f, tp::tpack<Ts...> ts) {
-			constexpr auto n = size(ts);
+			constexpr auto n = tp::size(ts);
 			// if no types are explicitly requested -- infer one from F's first argument
 			if constexpr (n == 0)
 				return do_make_filter(std::forward<F>(f));
 			// no need to wrap single cherry capture lambda with serial visitor, return it directly
 			else if constexpr (n == 1)
-				return do_make_filter(std::forward<F>(f), head(ts));
+				return do_make_filter(std::forward<F>(f), tp::head(ts));
 			// otherwise build serial visitor containing lambda for each requested type
 			else
 				return serial{do_make_filter(std::forward<F>(f), tp::unit_v<Ts>)...};
@@ -143,9 +169,9 @@ namespace ddv {
 			if constexpr (util::can_deduce_callable<F>) {
 				using Finfo = util::deduce_callable<F>;
 				if constexpr (std::is_void_v<Cherry>)
-					return make_cherry_picker(std::forward<F>(f), typename Finfo::args{});
+					return make_cherry_picker(std::forward<F>(f), Finfo::args_v);
 				else
-					return make_cherry_picker(std::forward<F>(f), cherry + tail(typename Finfo::args{}));
+					return make_cherry_picker(std::forward<F>(f), cherry + tail(Finfo::args_v));
 			}
 			else {
 				static_assert(!std::is_void_v<Cherry>, "Cannot deduce type to filter from 1st callable argument. "

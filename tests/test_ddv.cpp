@@ -152,8 +152,7 @@ TEST_CASE("[visitable] void callables with dynamic matching") {
 		Base::make_filter<GrandT, bool>(
 			[&] { res = Match::Two; }
 		),
-		[&] { res = Match::Err; },
-		ddv::noop
+		[&] { res = Match::Err; }
 	};
 
 	// [NOTE] `visitable::visit()` will make internal copy (or move value) of passed visitor
@@ -269,4 +268,42 @@ TEST_CASE("[visitable] recursive visitor") {
 	res = Match::None;
 	CHECK(!GrandDerivedL{}.visit(self_ref_v).has_value());
 	CHECK(res == Match::One);
+}
+
+TEST_CASE("[visitable] visitor with additional arguments") {
+	using fizz = ddv::util::deduce_callable<decltype(
+		Base::make_filter([&](GrandT<std::int64_t>*, int, double) {})
+	)>;
+	static_assert(fizz::args_v == tp::tpack_v<Base*, int, double>);
+
+	auto res = Match::None;
+	auto extra_args_v = ddv::serial{
+		Base::make_filter([&](GrandT<std::int64_t>*) {
+			res = Match::One;
+		}),
+		Base::make_filter([&](GrandT<std::int64_t>*, int) {
+			res = Match::Two;
+		}),
+		Base::make_filter([&](GrandT<std::int64_t>*, int, double) {
+			res = Match::Three;
+		}),
+		Base::make_filter([&](GrandT<std::int64_t>*, char) {
+			res = Match::Four;
+		}),
+		Base::make_filter<GrandT, std::string>([&] {
+			res = Match::Five;
+		}),
+	};
+
+	gt_int64.visit(extra_args_v);
+	CHECK(res == Match::One);
+	gt_int64.visit(extra_args_v, 42);
+	CHECK(res == Match::Two);
+	gt_int64.visit(extra_args_v, 42, 42.);
+	CHECK(res == Match::Three);
+	gt_int64.visit(extra_args_v, 'x');
+	CHECK(res == Match::Four);
+
+	gt_string.visit(extra_args_v);
+	CHECK(res == Match::Five);
 }

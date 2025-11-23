@@ -469,8 +469,8 @@ namespace ddv {
 	/////////////////////////////////////////////////////////////////////////
 	// make visitor with given multiplexer interface and `serial` demultiplexer
 	template<typename Mux, typename... Fs>
-	constexpr auto make_serial_visitor(Fs&&... fs) {
-		using Serial = decltype( serial{std::declval<Fs>()...} );
+	constexpr auto make_serial_visitor(Fs&&... fs) noexcept {
+		using Serial = decltype(serial{std::declval<Fs>()...});
 		return visitor<Mux, Serial>(std::forward<Fs>(fs)...);
 	}
 

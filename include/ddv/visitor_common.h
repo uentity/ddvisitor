@@ -76,8 +76,8 @@ namespace ddv {
 
 			void visit(T* x) override final {
 				using DemuxBackend = typename Demux::DemuxBackend;
-				auto& self = static_cast<Demux&>(*this);
-				static_cast<DemuxBackend&>(self).visit(x);
+				auto& self_demux = static_cast<Demux&>(*this);
+				static_cast<DemuxBackend&>(self_demux).visit(x);
 			}
 		};
 
