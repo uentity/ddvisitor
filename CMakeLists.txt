@@ -36,9 +36,9 @@ if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND BUILD_TESTING)
 	Include(FetchContent)
 
 	FetchContent_Declare(
-	  Catch2
-	  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-	  GIT_TAG        v3.4.0
+		Catch2
+		GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+		GIT_TAG        v3.11.0
 	)
 	FetchContent_MakeAvailable(Catch2)
 	include(Catch)
@@ -53,6 +53,7 @@ if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND BUILD_TESTING)
 	target_compile_options(ddv_tests PRIVATE
 		$<$<CXX_COMPILER_ID:MSVC>:/W4>
 		$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
+		$<$<CXX_COMPILER_ID:Clang>:-ftime-trace>
 	)
 	set_property(TARGET ddv_tests PROPERTY COMPILE_WARNING_AS_ERROR ON)
 	catch_discover_tests(ddv_tests)
