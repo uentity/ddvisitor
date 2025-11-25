@@ -76,28 +76,28 @@ namespace {
 } // hidden namespace
 
 TEST_CASE("[visitable] core", "[ddv]") {
-	static_assert(ddv::is_virtual_base_of<VBase, VDerived>);
-	static_assert(!ddv::is_virtual_base_of<Derived, GrandBase>);
+	static_assert(ddv::VirtualBaseOf<VBase, VDerived>);
+	static_assert(!ddv::VirtualBaseOf<Derived, GrandBase>);
 
 	// test `visitable`
 	auto isv1 = Base::make_filter<GrandT, std::int64_t, std::string>(
 		[](auto) { return Match::One; }
 	);
-	static_assert(ddv::is_serial_visitor<decltype(isv1)>);
+	static_assert(ddv::SerialVisitorType<decltype(isv1)>);
 	auto isv2 = Base::make_filter<tp::tpack<GrandT<std::int64_t>, GrandT<std::string>>>(
 		[](auto) { return Match::One; }
 	);
-	static_assert(ddv::is_serial_visitor<decltype(isv2)>);
+	static_assert(ddv::SerialVisitorType<decltype(isv2)>);
 	auto isv3 = Base::make_filter<GrandT, tp::tpack<std::int64_t, std::string>>(
 		[](auto) { return Match::One; }
 	);
-	static_assert(ddv::is_serial_visitor<decltype(isv3)>);
+	static_assert(ddv::SerialVisitorType<decltype(isv3)>);
 
 	auto dv = Base::make_filter<GrandT, double>(
 		[](auto) { return Match::Two; }
 	);
 	using dv_t = decltype(dv);
-	static_assert(!ddv::is_serial_visitor<dv_t>);
+	static_assert(!ddv::SerialVisitorType<dv_t>);
 
 	CHECK(dv(&gt_double) == Match::Two);
 	static_assert(std::is_invocable_v<dv_t, Base*>);
@@ -107,7 +107,7 @@ TEST_CASE("[visitable] core", "[ddv]") {
 	static_assert(!std::is_invocable_v<dv_t, Base*, decltype(isv3)>);
 
 	auto bv = Base::make_filter([](GrandT<bool>*) { return Match::Three; });
-	static_assert(!ddv::is_serial_visitor<decltype(bv)>);
+	static_assert(!ddv::SerialVisitorType<decltype(bv)>);
 
 	const auto check_gt_visitor = [&](auto gt_visitor) {
 		CHECK(*gt_int64.visit(gt_visitor) == Match::One);

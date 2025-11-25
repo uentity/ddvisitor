@@ -23,7 +23,7 @@ namespace ddv {
 	// `serial` wrapper that can store demux result calculated in void `T->accept()` call
 	// intended to be used with visitable types and `serial::apply()`
 	template<typename Mux, typename Serial, typename... Args>
-		requires is_serial_visitor<Serial>
+		requires SerialVisitorType<Serial>
 	struct visitable_demux : private Serial {
 		// [NOTE] can't just inherit ctors like `using Serial::Serial;`
 		// copy/move ctors aren't inherited => initializing `visitable_demux` with instance of `serial` would fail
@@ -89,7 +89,7 @@ namespace ddv {
 		virtual auto accept(const_mux_type&) const -> void = 0;
 
 		template<typename F, typename... Xs>
-			requires is_serial_visitor<F>
+			requires SerialVisitorType<F>
 		auto visit(F&& f, Xs&&... xs) {
 			auto v = make_visitable_visitor<mux_type>(std::forward_as_tuple(std::forward<Xs>(xs)...), std::forward<F>(f));
 			this->accept(v);
@@ -103,7 +103,7 @@ namespace ddv {
 		}
 
 		template<typename F, typename... Xs>
-			requires is_serial_visitor<F>
+			requires SerialVisitorType<F>
 		auto visit(F&& f, Xs&&... xs) const {
 			auto v = make_visitable_visitor<const_mux_type>(std::forward_as_tuple(std::forward<Xs>(xs)...), std::forward<F>(f));
 			this->accept(v);
@@ -174,7 +174,7 @@ namespace ddv {
 					return make_cherry_picker(std::forward<F>(f), cherry + tail(Finfo::args_v));
 			}
 			else {
-				static_assert(!std::is_void_v<Cherry>, "Cannot deduce type to filter from 1st callable argument. "
+				static_assert(!std::is_void_v<Cherry>, "Cannot deduce type to filter from 1st argument of the callable."
 					"Specify it explicitly either as `make_visitor()` template param or as type of 1st argument.");
 				return make_cherry_picker(std::forward<F>(f), cherry);
 			}
@@ -203,7 +203,7 @@ namespace ddv {
 						if constexpr (f_invocable)
 							return f();
 						else {
-							if constexpr (is_virtual_base_of<Ancestor, cherry_t>)
+							if constexpr (VirtualBaseOf<Ancestor, cherry_t>)
 								return f(dynamic_cast<cherry_ptr_t>(self), std::forward<Ts>(xs)...);
 							else
 								return f(static_cast<cherry_ptr_t>(self), std::forward<Ts>(xs)...);

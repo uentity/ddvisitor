@@ -51,27 +51,27 @@ namespace ddv {
 	} // ddv::detail
 
 	template<typename T>
-	concept is_variant = decltype(detail::is_variant(nut_v<T>))::value;
+	concept VariantType = decltype(detail::is_variant(nut_v<T>))::value;
 
 	template<typename T>
-	concept is_serial_visitor = decltype(detail::is_serial_visitor(nut_v<T>))::value;
+	concept SerialVisitorType = decltype(detail::is_serial_visitor(nut_v<T>))::value;
 
 	// checks whether type T can carry target type U where T can be optional/variant
 	template<typename T, typename U>
-	concept carry_type = detail::carry_type<U>(nut_v<T>);
+	concept CarryType = detail::carry_type<U>(nut_v<T>);
 
 	template<typename T>
-	concept carry_void = carry_type<T, void> || carry_type<T, void_value_t>;
+	concept CarryVoid = CarryType<T, void> || CarryType<T, void_value_t>;
 
 	template<typename Args, typename Params>
-	concept args_match_params = decltype(detail::args_match_params(
+	concept ArgsMatchParams = decltype(detail::args_match_params(
 		tp::transform<std::decay>(Args{}), tp::transform<std::decay>(Params{})
 	))::value;
 
 	template<typename F, typename... Args>
-	concept strict_callable = std::invocable<F, Args...>
+	concept StrictCallable = std::invocable<F, Args...>
 		&& (!util::can_deduce_callable<F>
-			|| args_match_params<tp::tpack<Args...>, typename util::deduce_callable<F>::args>
+			|| ArgsMatchParams<tp::tpack<Args...>, typename util::deduce_callable<F>::args>
 		);
 
 	// make result of type R from source value of type T
@@ -88,19 +88,19 @@ namespace ddv {
 				return std::forward<T>(src);
 			// case when `src` is void value (`ok` or `none`)
 			else if constexpr (std::is_same_v<src_value_t, void_value_t>) {
-				if constexpr (carry_void<tgt_value_t>)
+				if constexpr (CarryVoid<tgt_value_t>)
 					return res_t{src};
 				else
 					return res_t{std::nullopt};
 			}
-			else if constexpr (is_optional<T>) {
+			else if constexpr (OptionalType<T>) {
 				if (src)
 					return make_result<res_t>(*std::forward<T>(src));
 				else
 					return res_t{std::nullopt};
 			}
 			// if `src` is variant - unpack value and convert to result type
-			else if constexpr (is_variant<src_value_t> && !std::is_same_v<src_value_t, tgt_value_t>)
+			else if constexpr (VariantType<src_value_t> && !std::is_same_v<src_value_t, tgt_value_t>)
 				return std::visit(
 					[]<typename X>(X&& x) { return make_result<res_t>(std::forward<X>(x)); },
 					std::forward<T>(src)
@@ -152,7 +152,7 @@ namespace ddv {
 					using ref_arg = typename Finfo::template ith_arg<Pos>;
 					if constexpr (Complete)
 						return tp::unit_v<visitor<std::remove_cvref_t<ref_arg>, ref>>;
-					else if constexpr (is_mux<ref_arg>) {
+					else if constexpr (MuxType<ref_arg>) {
 						static_assert(
 							std::is_lvalue_reference_v<ref_arg>,
 							"Self reference must be an lvalue reference to the visitor interface (ddv::mux)"
@@ -172,18 +172,18 @@ namespace ddv {
 		// calc final decision whether F matches (can be called with) the value of type T being visited
 		template<typename F, typename... Ts>
 		static constexpr bool is_matched = std::invocable<F>
-			|| strict_callable<F, Ts...>
-			|| strict_callable<F, Ts..., ref_visitor_type<F, false, sizeof...(Ts)>>;
+			|| StrictCallable<F, Ts...>
+			|| StrictCallable<F, Ts..., ref_visitor_type<F, false, sizeof...(Ts)>>;
 
 		template<typename T, typename... Args, typename... Gs>
 		static constexpr bool can_visit_impl(tp::unit<T>, tp::tpack<Args...> args, std::tuple<Gs...>* gs) {
-			if constexpr (is_optional<T>)
+			if constexpr (OptionalType<T>)
 				return can_visit_impl(tp::unit_v<decltype(*std::declval<T>())>, args, gs);
-			else if constexpr (is_variant<T>)
+			else if constexpr (VariantType<T>)
 				return can_visit_impl<Gs...>(nut_v<T>, args);
 			else
 				// true if T can be visited by at least one callable
-				return is_void<T> || (is_matched<Gs, bind_lvalue_ref_t<T>, bind_lvalue_ref_t<Args>...> || ...);
+				return VoidType<T> || (is_matched<Gs, bind_lvalue_ref_t<T>, bind_lvalue_ref_t<Args>...> || ...);
 		}
 
 		template<typename... Gs, typename... Ts, typename... Args>
@@ -227,7 +227,7 @@ namespace ddv {
 			// pass Simplify = true flag that strips `void_value_t` from result type
 			// like `optional<variant<void_value_t, T>>` -> `optional<T>`
 			using res_t = decltype( do_visit<true>(std::declval<T>(), std::declval<Args>()...) );
-			if constexpr (is_void<res_t>)
+			if constexpr (VoidType<res_t>)
 				do_visit<true>(std::forward<T>(value), std::forward<Args>(args)...);
 			else
 				return do_visit<true>(std::forward<T>(value), std::forward<Args>(args)...);
@@ -276,13 +276,13 @@ namespace ddv {
 					return tp::unit_v<R>;
 				else if constexpr (std::is_void_v<R>)
 					return tp::unit_v<L>;
-				else if constexpr (is_variant<L>) {
-					if constexpr (is_variant<R>)
+				else if constexpr (VariantType<L>) {
+					if constexpr (VariantType<R>)
 						return merge_variant(tp::unit_v<L>, tp::unit_v<R>);
 					else
 						return merge_variant<R>(tp::unit_v<L>);
 				}
-				else if constexpr (is_variant<R>)
+				else if constexpr (VariantType<R>)
 					return merge_variant<L>(tp::unit_v<R>);
 				else
 					return tp::unit_v<std::variant<L, R>>;
@@ -336,16 +336,16 @@ namespace ddv {
 		// recursively unpack optional/variant, optionally deref pointer-likes and then call `f` on extracted value
 		template<bool Simplify = false, bool DerefPtrs, typename F, typename T>
 		static constexpr auto unpack_and_invoke(F&& f, T&& value) {
-			if constexpr (is_void<T>)
+			if constexpr (VoidType<T>)
 				return;
-			else if constexpr (is_optional<T> || (DerefPtrs && is_pointer_like<T>)) {
+			else if constexpr (OptionalType<T> || (DerefPtrs && PointerLikeType<T>)) {
 				using res_t = decltype(unpack_and_invoke<false, DerefPtrs>(std::declval<F>(), *std::declval<T>()));
 				if (value)
 					return unpack_and_invoke<false, DerefPtrs>(std::forward<F>(f), *std::forward<T>(value));
 				else
 					return make_result<res_t>(none);
 			}
-			else if constexpr (is_variant<T>) {
+			else if constexpr (VariantType<T>) {
 				const auto do_invoke = [&f]<typename X>(X&& x) {
 					return unpack_and_invoke<false, DerefPtrs>(std::forward<F>(f), std::forward<X>(x));
 				};
@@ -397,7 +397,7 @@ namespace ddv {
 					using value_t = deduce_value_t<ret_t>;
 					using res_t = make_result_type<Simplify, value_t>;
 					// if matched visitor functor returns `optional` -- enable runtime matches processing branch
-					if constexpr (is_optional<ret_t>) {
+					if constexpr (OptionalType<ret_t>) {
 						// calculate final result type with possible next match invoke
 						using next_ret_t = decltype(invoke_first_match<match_idx + 1>(std::declval<Ts>()...));
 						constexpr bool next_match_found = !std::is_same_v<next_ret_t, std::nullopt_t>;
@@ -435,7 +435,7 @@ namespace ddv {
 
 	// Y = source | sink : Y(x) -> z : source.visit(x) -> y -> sink.visit(y) -> z
 	template<typename Source, typename Sink>
-		requires is_serial_visitor<Source> || is_serial_visitor<Sink>
+		requires SerialVisitorType<Source> || SerialVisitorType<Sink>
 	constexpr auto operator |(Source&& source, Sink&& sink) {
 		return serial{
 			[source = serial{std::forward<Source>(source)}, sink = serial{std::forward<Sink>(sink)}]
@@ -452,7 +452,7 @@ namespace ddv {
 	// Y = source >> sink : Y(x) -> z : source.apply(x) -> y -> sink.apply(y) -> z :
 	// x.visit(source) -> y -> y.visit(sink) -> z
 	template<typename Source, typename Sink>
-		requires is_serial_visitor<Source> || is_serial_visitor<Sink>
+		requires SerialVisitorType<Source> || SerialVisitorType<Sink>
 	constexpr auto operator >>(Source&& source, Sink&& sink) {
 		return serial{
 			[source = serial{std::forward<Source>(source)}, sink = serial{std::forward<Sink>(sink)}]

@@ -97,13 +97,13 @@ namespace ddv {
 	inline constexpr auto bounded_index_sequence = detail::bounded_index_sequence<From, To>();
 
 	template<typename T>
-	concept is_pointer_like = requires(T x) { *x; static_cast<bool>(x); };
+	concept PointerLikeType = requires(T x) { *x; static_cast<bool>(x); };
 
 	template<typename Base, typename Derived>
-	concept is_virtual_base_of = std::is_base_of_v<Base, Derived> && !detail::can_static_cast<Base*, Derived*>;
+	concept VirtualBaseOf = std::is_base_of_v<Base, Derived> && !detail::can_static_cast<Base*, Derived*>;
 
 	template<typename T>
-	concept is_optional = std::same_as<nut_t<T>, std::optional<typename nut_t<T>::value_type>>;
+	concept OptionalType = std::same_as<nut_t<T>, std::optional<typename nut_t<T>::value_type>>;
 
 	template<typename T>
 	using deduce_value_t = detail::deduce_value<std::remove_cvref_t<T>>::type;
@@ -113,7 +113,7 @@ namespace ddv {
 
 	// true if T is exactly void or `void_value_t`
 	template<typename T>
-	concept is_void = detail::is_void<deduce_value_t<T>>;
+	concept VoidType = detail::is_void<deduce_value_t<T>>;
 
 	inline constexpr auto noop = [](auto&&...) {};
 	using noop_t = decltype(noop);
@@ -138,7 +138,7 @@ namespace ddv {
 	)::type;
 
 	template<typename T>
-	concept is_mux = std::same_as<nut_t<T>, tp::make<mux, typename nut_t<T>::types>>;
+	concept MuxType = std::same_as<nut_t<T>, tp::make<mux, typename nut_t<T>::types>>;
 
 	// can be used with pipe operator to extract a value of given type from variant type returned by serial visitor
 	template<typename T>
