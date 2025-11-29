@@ -5,6 +5,7 @@
 
 #include <concepts>
 #include <tuple>
+#include <type_traits>
 #include <variant>
 
 
@@ -15,6 +16,13 @@ namespace ddv {
 	template<typename... Fs> serial(Fs&&...) -> serial<Fs...>;
 
 	namespace detail {
+
+		template<typename T>
+		using bind_lvalue_ref = std::conditional<
+			std::is_lvalue_reference_v<T>, T, std::add_lvalue_reference_t<std::add_const_t<T>>
+		>;
+		template<typename T>
+		using bind_lvalue_ref_t = typename bind_lvalue_ref<T>::type;
 
 		template<typename T>
 		constexpr auto is_variant(tp::unit<T>) -> std::false_type;
@@ -122,13 +130,6 @@ namespace ddv {
 		template<std::size_t i> using Fi = std::tuple_element_t<i, storage_t>;
 		static constexpr auto chain_length = std::tuple_size_v<storage_t>;
 
-		template<typename T>
-		using bind_lvalue_ref = std::conditional<
-			std::is_lvalue_reference_v<T>, T, std::add_lvalue_reference_t<std::add_const_t<T>>
-		>;
-		template<typename T>
-		using bind_lvalue_ref_t = typename bind_lvalue_ref<T>::type;
-
 		// forward calls to an instance of `serial` stored by reference
 		// returned value is lost because `ref::visit()` has void return type
 		struct ref {
@@ -145,7 +146,7 @@ namespace ddv {
 		// otherwise return `visitor<Mux, ref>` if `Complete` is true - for calling `F`
 		// and type of 2nd argument if `Complete` is false -- for `can_visit` check
 		template<typename F, bool Complete, size_t Pos>
-		static constexpr auto make_ref_visitor_type() {
+		static consteval auto make_ref_visitor_type() {
 			if constexpr (util::can_deduce_callable<F>) {
 				using Finfo = util::deduce_callable<F>;
 				if constexpr (Pos < Finfo::nargs) {
@@ -155,7 +156,7 @@ namespace ddv {
 					else if constexpr (MuxType<ref_arg>) {
 						static_assert(
 							std::is_lvalue_reference_v<ref_arg>,
-							"Self reference must be an lvalue reference to the visitor interface (ddv::mux)"
+							"Recursion: last param must be an lvalue reference to the visitor interface type (ddv::mux)"
 						);
 						return tp::unit_v<ref_arg>;
 					}
@@ -176,20 +177,20 @@ namespace ddv {
 			|| StrictCallable<F, Ts..., ref_visitor_type<F, false, sizeof...(Ts)>>;
 
 		template<typename T, typename... Args, typename... Gs>
-		static constexpr bool can_visit_impl(tp::unit<T>, tp::tpack<Args...> args, std::tuple<Gs...>* gs) {
+		static consteval bool can_visit_impl(tp::unit<T>, tp::tpack<Args...> args, tp::unit<std::tuple<Gs...>> gs) {
 			if constexpr (OptionalType<T>)
 				return can_visit_impl(tp::unit_v<decltype(*std::declval<T>())>, args, gs);
 			else if constexpr (VariantType<T>)
 				return can_visit_impl<Gs...>(nut_v<T>, args);
 			else
 				// true if T can be visited by at least one callable
-				return VoidType<T> || (is_matched<Gs, bind_lvalue_ref_t<T>, bind_lvalue_ref_t<Args>...> || ...);
+				return VoidType<T> || (is_matched<Gs, detail::bind_lvalue_ref_t<T>, detail::bind_lvalue_ref_t<Args>...> || ...);
 		}
 
-		template<typename... Gs, typename... Ts, typename... Args>
-		static constexpr bool can_visit_impl(tp::unit<std::variant<Ts...>>, tp::tpack<Args...> args) {
+		template<typename... Gs, typename... Ts>
+		static consteval bool can_visit_impl(tp::unit<std::variant<Ts...>>, auto args) {
 			// returns true only if can visit each alternative of variant type T
-			return (can_visit_impl(tp::unit_v<Ts>, args, static_cast<std::tuple<Gs...>*>(nullptr)) && ...);
+			return (can_visit_impl(tp::unit_v<Ts>, args, tp::unit_v<std::tuple<Gs...>>) && ...);
 		}
 
 		storage_t fs_;
@@ -197,7 +198,7 @@ namespace ddv {
 	public:
 		// tests if value of type `F` can be visited by this serial visitor (there is at least one matching callable)
 		template<typename T, typename... Args>
-		static constexpr bool can_visit = can_visit_impl(tp::unit_v<T>, tp::tpack_v<Args...>, (storage_t*)nullptr);
+		static constexpr bool can_visit = can_visit_impl(tp::unit_v<T>, tp::tpack_v<Args...>, tp::unit_v<storage_t>);
 
 		// converting ctor to perfectly forward callables into internal storage
 		template<typename... Gs>
@@ -376,7 +377,7 @@ namespace ddv {
 
 		template<std::size_t From = 0, bool Simplify = false, typename... Ts>
 		constexpr auto invoke_first_match(Ts&&... values) {
-			constexpr auto Us = tp::transform<bind_lvalue_ref>(tp::tpack_v<Ts...>);
+			constexpr auto Us = tp::transform<detail::bind_lvalue_ref>(tp::tpack_v<Ts...>);
 			constexpr auto match_idx = find_match_idx(Us, bounded_index_sequence<From, chain_length>);
 			if constexpr (match_idx < chain_length) {
 				constexpr auto invoke_matched_fn = []<typename F, typename... Xs>(serial* self, F&& f, Xs&&... xs) {
@@ -389,7 +390,7 @@ namespace ddv {
 						return f(std::forward<Xs>(xs)..., self_ref);
 					}
 				};
-				using ret_t = call_result_t<decltype(invoke_matched_fn), serial*, Fi<match_idx>, bind_lvalue_ref_t<Ts>...>;
+				using ret_t = call_result_t<decltype(invoke_matched_fn), serial*, Fi<match_idx>, detail::bind_lvalue_ref_t<Ts>...>;
 
 				if constexpr (std::is_void_v<ret_t>)
 					invoke_matched_fn(this, std::get<match_idx>(fs_), std::forward<Ts>(values)...);
@@ -406,7 +407,7 @@ namespace ddv {
 							using final_res_t = deduce_result_t<make_merged_type<Simplify, value_t, next_value_t>>;
 
 							// invoke current matched functor (pass value by reference to prevent stealing)
-							if (auto r = invoke_matched_fn(this, std::get<match_idx>(fs_), static_cast<bind_lvalue_ref_t<Ts>>(values)...))
+							if (auto r = invoke_matched_fn(this, std::get<match_idx>(fs_), static_cast<detail::bind_lvalue_ref_t<Ts>>(values)...))
 								return make_result<final_res_t>(*std::move(r));
 							// if it haven't processed the value, invoke next match
 							else {
@@ -433,18 +434,43 @@ namespace ddv {
 		}
 	};
 
+	// Pipe operator with extra args applied only to source
 	// Y = source | sink : Y(x) -> z : source.visit(x) -> y -> sink.visit(y) -> z
+	// Y = source | sink : Y(x, args...) -> z : source.visit(x, args...) -> y -> sink.visit(y) -> z
 	template<typename Source, typename Sink>
 		requires SerialVisitorType<Source> || SerialVisitorType<Sink>
 	constexpr auto operator |(Source&& source, Sink&& sink) {
 		return serial{
 			[source = serial{std::forward<Source>(source)}, sink = serial{std::forward<Sink>(sink)}]
-			<typename T>(T&& value) mutable {
-				using value_t = deduce_value_t<decltype( source.visit(std::declval<T>()) )>;
+			<typename T, typename... Ts>(T&& value, Ts&&... args) mutable {
+				using value_t = deduce_value_t<decltype( source.visit(std::declval<T>(), std::declval<Ts>()...) )>;
 				if constexpr (std::is_void_v<value_t>)
-					source.visit(std::forward<T>(value));
+					source.visit(std::forward<T>(value), std::forward<Ts>(args)...);
 				else
-					return sink.visit(source.visit(std::forward<T>(value)));
+					return sink.visit(source.visit(std::forward<T>(value), std::forward<Ts>(args)...));
+			}
+		};
+	}
+
+	// Pipe operator with extra args applied only to both source AND sink
+	// Y = source | sink : Y(x) -> z : source.visit(x) -> y -> sink.visit(y) -> z
+	// Y = source | sink : Y(x, args...) -> z : source.visit(x, args...) -> y -> sink.visit(y, args...) -> z
+	template<typename Source, typename Sink>
+		requires SerialVisitorType<Source> || SerialVisitorType<Sink>
+	constexpr auto operator ||(Source&& source, Sink&& sink) {
+		return serial{
+			[source = serial{std::forward<Source>(source)}, sink = serial{std::forward<Sink>(sink)}]
+			<typename T, typename... Ts>(T&& value, Ts&&... args) mutable {
+				using value_t = deduce_value_t<decltype(
+					source.visit(std::declval<T>(), std::declval<detail::bind_lvalue_ref_t<Ts>>()...)
+				)>;
+				if constexpr (std::is_void_v<value_t>)
+					source.visit(std::forward<T>(value), static_cast<detail::bind_lvalue_ref_t<Ts>>(args)...);
+				else
+					return sink.visit(
+						source.visit(std::forward<T>(value), static_cast<detail::bind_lvalue_ref_t<Ts>>(args)...),
+						std::forward<Ts>(args)...
+					);
 			}
 		};
 	}

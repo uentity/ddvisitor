@@ -266,3 +266,39 @@ TEST_CASE("[serial visitor] extra args", "[ddv]") {
 	v.visit(42, 42);
 	CHECK(r == Match::Five);
 }
+
+TEST_CASE("[serial visitor] extra args with pipe operators", "[ddv]") {
+	auto v = ddv::serial{
+		[](int x) { return x; },
+		[](int x, value1) { return x*2; },
+		[](int x, value1, value1) { return x*3; },
+		[](int x, value2) { return x*x; },
+		[](int x, value2, value2) { return x*x + x; },
+	};
+
+	auto vv = v | v;
+	auto VV = v || v;
+
+	CHECK(*vv(42) == 42);
+	CHECK(*VV(42) == 42);
+
+	CHECK(*vv(42, value1{}) == 84);
+	CHECK(*VV(42, value1{}) == 168);
+
+	CHECK(*vv(42, value1{}, value1{}) == 126);
+	CHECK(*VV(42, value1{}, value1{}) == 378);
+
+	CHECK(*vv(42, value1{}, value1{}) == 126);
+	CHECK(*VV(42, value1{}, value1{}) == 378);
+
+	CHECK(*vv(42, value2{}) == 1764);
+	CHECK(*VV(42, value2{}) == 3111696);
+
+	CHECK(*vv(42, value2{}, value2{}) == 1806);
+	CHECK(*VV(42, value2{}, value2{}) == 3263442);
+
+	CHECK(*(v | ddv::cast<short>)(42, value1{}) == 84);
+
+	// the following will not compile since 2nd operand `ddv::cast` accepts only one argument
+	//(v || ddv::cast<short>)(42, value1{});
+}
