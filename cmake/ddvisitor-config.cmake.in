@@ -1,0 +1,11 @@
+# This macro handles relocatability and package prefix calculation.
+@PACKAGE_INIT@
+
+# 0. Dependencies
+find_dependency(tpack REQUIRED)
+
+# 1. Include the Targets File
+include("${CMAKE_CURRENT_LIST_DIR}/ddvisitor-targets.cmake")
+
+# 2. Check for required components
+check_required_components(ddvisitor)
