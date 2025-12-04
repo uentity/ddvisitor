@@ -30,7 +30,13 @@ target_sources(
 	FILES ${DDV_HEADERS}
 )
 
-find_package(tpack)
+# Check if we are a sub-project and if the dependency has been fetched
+if (NOT CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND DEFINED tpack_SOURCE_DIR)
+	# This ensures find_package(tpack) succeeds by finding the build-tree targets.
+	list(APPEND CMAKE_PREFIX_PATH ${tpack_SOURCE_DIR})
+endif()
+
+find_package(tpack CONFIG REQUIRED)
 target_link_libraries(ddvisitor INTERFACE tp::tpack)
 
 include(CTest)

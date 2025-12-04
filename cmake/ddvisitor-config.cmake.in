@@ -1,3 +1,5 @@
+include(CMakeFindDependencyMacro)
+
 # This macro handles relocatability and package prefix calculation.
 @PACKAGE_INIT@
 
