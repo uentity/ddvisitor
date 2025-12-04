@@ -31,9 +31,9 @@ target_sources(
 )
 
 # Check if we are a sub-project and if the dependency has been fetched
-if (NOT CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND DEFINED tpack_SOURCE_DIR)
+if (NOT CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND DEFINED tpack_BINARY_DIR)
 	# This ensures find_package(tpack) succeeds by finding the build-tree targets.
-	list(APPEND CMAKE_PREFIX_PATH ${tpack_SOURCE_DIR})
+	list(APPEND CMAKE_PREFIX_PATH ${tpack_BINARY_DIR})
 endif()
 
 find_package(tpack CONFIG REQUIRED)
@@ -90,6 +90,12 @@ install(
 	DESTINATION ${PACKAGE_CONFIG_DESTINATION}
 )
 
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} 
+	APPEND PROPERTY EXPORT_PACKAGE_REGISTRY ${PROJECT_NAME}
+)
+set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+export(EXPORT ddvisitor-targets NAMESPACE ${DDVISITOR_NAMESPACE} FILE "${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-targets.cmake")
+
 configure_package_config_file(
 	${CMAKE_CURRENT_SOURCE_DIR}/cmake/ddvisitor-config.cmake.in
 	"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
@@ -102,7 +108,5 @@ install(
 
 if (DEFINED CMAKE_USER_BUILD_DEV_MODE AND CMAKE_USER_BUILD_DEV_MODE)
 	message(STATUS "Local Package Registry ENABLED for development.")
-	set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
-	export(EXPORT ddvisitor-targets NAMESPACE ${DDVISITOR_NAMESPACE} FILE ddvisitor-targets.cmake)
 	export(PACKAGE ddvisitor)
 endif ()

@@ -4,10 +4,16 @@ include(CMakeFindDependencyMacro)
 @PACKAGE_INIT@
 
 # 0. Dependencies
-find_dependency(tpack REQUIRED)
+if (NOT TARGET tp::tpack)
+	find_dependency(tpack REQUIRED)
+else ()
+	message(STATUS "tpack target (tp::tpack) already defined in build tree. Skipping find_dependency.")
+endif ()
 
 # 1. Include the Targets File
-include("${CMAKE_CURRENT_LIST_DIR}/ddvisitor-targets.cmake")
+if (NOT TARGET ddv::ddvisitor)
+	include("${CMAKE_CURRENT_LIST_DIR}/ddvisitor-targets.cmake")
+endif ()
 
 # 2. Check for required components
 check_required_components(ddvisitor)
