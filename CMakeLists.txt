@@ -4,14 +4,16 @@ project(ddvisitor
 	DESCRIPTION "Modern C++ double dispatch visitor"
 	LANGUAGES CXX)
 
+set(DDVISITOR_NAMESPACE ddv::)
+
 add_library(ddvisitor INTERFACE)
-add_library(ddvisitor::ddvisitor ALIAS ddvisitor)
+add_library(ddv::ddvisitor ALIAS ddvisitor)
 target_compile_features(ddvisitor INTERFACE cxx_std_20)
 
 target_include_directories(
 	ddvisitor INTERFACE
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-	$<INSTALL_INTERFACE:include>
+	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 set(DDV_HEADERS
@@ -64,17 +66,37 @@ if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND BUILD_TESTING)
 	add_test(NAME "[benchmark] dynamic_cast vs ddv" COMMAND dynamic_cast_test)
 endif ()
 
+## Install and export
+
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set(PACKAGE_CONFIG_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
+
 install(
 	TARGETS ddvisitor
-	EXPORT ddv_targets
-	INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+	EXPORT ddvisitor-targets
 	FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(
-	EXPORT ddv_targets NAMESPACE ddvisitor::
-	DESTINATION ${CMAKE_INSTALL_LIB_DIR}/cmake/ddvisitor
+	EXPORT ddvisitor-targets NAMESPACE ${DDVISITOR_NAMESPACE}
+	FILE ddvisitor-targets.cmake
+	DESTINATION ${PACKAGE_CONFIG_DESTINATION}
 )
-export(EXPORT ddv_targets NAMESPACE ddvisitor:: FILE ddv_targets.cmake)
-#set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
-export(PACKAGE ddvisitor)
+
+configure_package_config_file(
+	${CMAKE_CURRENT_SOURCE_DIR}/cmake/ddvisitor-config.cmake.in
+	"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
+	INSTALL_DESTINATION ${PACKAGE_CONFIG_DESTINATION}
+)
+install(
+	FILES "${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
+	DESTINATION ${PACKAGE_CONFIG_DESTINATION}
+)
+
+if (DEFINED CMAKE_USER_BUILD_DEV_MODE AND CMAKE_USER_BUILD_DEV_MODE)
+	message(STATUS "Local Package Registry ENABLED for development.")
+	set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+	export(EXPORT ddvisitor-targets NAMESPACE ${DDVISITOR_NAMESPACE} FILE ddvisitor-targets.cmake)
+	export(PACKAGE ddvisitor)
+endif ()
