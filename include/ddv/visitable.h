@@ -55,9 +55,9 @@ namespace ddv {
 	private:
 		std::tuple<Args...> args_;
 
-		using demux_outcome = decltype(
-			std::declval<Serial>().visit(std::declval<tp::make<std::variant, typename Mux::visited_types>>())
-		);
+		using demux_outcome = decltype(std::declval<Serial>().visit(
+			std::declval<tp::make<std::variant, typename Mux::visited_types>>(), std::declval<Args>()...
+		));
 		// result_type =
 		// 1. void_value_t, if Serial result is void for all visited types from Mux
 		// 2. invoke result type of Serial::visit() otherwise
