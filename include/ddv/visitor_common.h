@@ -119,14 +119,6 @@ namespace ddv {
 	template<typename T>
 	concept VoidType = detail::is_void<deduce_value_t<T>>;
 
-	inline constexpr auto noop = [](auto&&...) {};
-	using noop_t = decltype(noop);
-
-	template<bool Res>
-	inline constexpr auto noop_bool = [](auto&&...) { return Res; };
-	inline constexpr auto noop_false = noop_bool<false>;
-	inline constexpr auto noop_true = noop_bool<true>;
-
 	template<typename... Ts>
 	struct mux : detail::mux_wire<Ts>... {
 		using types = tp::tpack<Ts...>;
@@ -144,13 +136,31 @@ namespace ddv {
 	template<typename T>
 	concept MuxType = std::same_as<nut_t<T>, tp::make<mux, typename nut_t<T>::types>>;
 
+	// compiles faster that std::invoke_result_t
+	template<typename F, typename... Args>
+	using call_result_t = decltype(std::declval<F>()(std::declval<Args>()...));
+
+	inline constexpr auto noop = [](auto&&...) {};
+	using noop_t = decltype(noop);
+
+	template<bool Res>
+	inline constexpr auto noop_bool = [](auto&&...) { return Res; };
+	inline constexpr auto noop_false = noop_bool<false>;
+	inline constexpr auto noop_true = noop_bool<true>;
+
+	template<auto V>
+	inline constexpr auto noop_const = [](auto&&...) { return V; };
+
+	template<typename T = std::nullptr_t>
+	inline constexpr auto nullptr_const = noop_const<static_cast<T>(nullptr)>;
+
 	// can be used with pipe operator to extract a value of given type from variant type returned by serial visitor
 	template<typename T>
 	inline constexpr auto cast = []<typename X>(X&& x) -> T { return std::forward<X>(x); };
 
-	// compiles faster that std::invoke_result_t
-	template<typename F, typename... Args>
-	using call_result_t = decltype(std::declval<F>()(std::declval<Args>()...));
+	// be straightforward here - implicit move semantics are auto-applied
+	template<typename T>
+	inline constexpr auto identity = [](T x) -> T { return x; };
 
 } // namespace ddv
 
