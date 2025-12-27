@@ -1,6 +1,7 @@
-cmake_minimum_required(VERSION 3.23)
+cmake_minimum_required(VERSION 3.31)
 
 project(ddvisitor
+	VERSION 0.9
 	DESCRIPTION "Modern C++ double dispatch visitor"
 	LANGUAGES CXX)
 
@@ -10,23 +11,17 @@ add_library(ddvisitor INTERFACE)
 add_library(ddv::ddvisitor ALIAS ddvisitor)
 target_compile_features(ddvisitor INTERFACE cxx_std_20)
 
-target_include_directories(
-	ddvisitor INTERFACE
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-
 set(DDV_HEADERS
 	"deduce_callable.h"
 	"serial_visitor.h"
 	"visitable.h"
 	"visitor_common.h"
 )
-list(TRANSFORM DDV_HEADERS PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/include/ddv/")
+list(TRANSFORM DDV_HEADERS PREPEND "include/ddv/")
 target_sources(
-	ddvisitor INTERFACE
+	ddvisitor PUBLIC
 	FILE_SET HEADERS
-	BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
+	BASE_DIRS include
 	FILES ${DDV_HEADERS}
 )
 
@@ -73,20 +68,40 @@ if ((CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME) AND BUILD_TESTING)
 endif ()
 
 ## Install and export
-
-include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
-
 set(PACKAGE_CONFIG_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
+# Lib artifacts which is only headers installed into default location
 install(
 	TARGETS ddvisitor
 	EXPORT ddvisitor-targets
-	FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+	FILE_SET HEADERS
 )
+# Install generated package definition file
 install(
-	EXPORT ddvisitor-targets NAMESPACE ${DDVISITOR_NAMESPACE}
+	EXPORT ddvisitor-targets
+	NAMESPACE ${DDVISITOR_NAMESPACE}
 	FILE ddvisitor-targets.cmake
+	DESTINATION ${PACKAGE_CONFIG_DESTINATION}
+)
+
+# Generate CMake package config files
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/cmake/ddvisitor-config.cmake.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
+	INSTALL_DESTINATION ${PACKAGE_CONFIG_DESTINATION}
+)
+write_basic_package_version_file(
+	"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-version.cmake"
+	COMPATIBILITY ExactVersion
+)
+
+# Install generated config files
+install(
+	FILES
+		"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
+		"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-version.cmake"
 	DESTINATION ${PACKAGE_CONFIG_DESTINATION}
 )
 
@@ -95,16 +110,6 @@ set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 export(EXPORT ddvisitor-targets NAMESPACE ${DDVISITOR_NAMESPACE} FILE "${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-targets.cmake")
-
-configure_package_config_file(
-	${CMAKE_CURRENT_SOURCE_DIR}/cmake/ddvisitor-config.cmake.in
-	"${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
-	INSTALL_DESTINATION ${PACKAGE_CONFIG_DESTINATION}
-)
-install(
-	FILES "${CMAKE_CURRENT_BINARY_DIR}/ddvisitor-config.cmake"
-	DESTINATION ${PACKAGE_CONFIG_DESTINATION}
-)
 
 if (DEFINED CMAKE_USER_BUILD_DEV_MODE AND CMAKE_USER_BUILD_DEV_MODE)
 	message(STATUS "Local Package Registry ENABLED for development.")
