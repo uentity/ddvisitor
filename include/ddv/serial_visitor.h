@@ -238,7 +238,7 @@ namespace ddv {
 		template<typename T>
 		constexpr auto apply(T&& value) {
 			return unpack_and_invoke<false, true>(
-				[this](auto&& x) { return x.visit(*this); },
+				[this]<CompleteType U>(U&& x) { return x.visit(*this); },
 				std::forward<T>(value)
 			);
 		}

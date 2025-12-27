@@ -105,6 +105,10 @@ namespace ddv {
 	template<typename T>
 	concept OptionalType = std::same_as<nut_t<T>, std::optional<typename nut_t<T>::value_type>>;
 
+	// 2nd template arg is to force recalc at every invocation point
+	template<typename T, auto = []{}>
+	concept CompleteType = requires { sizeof(T); };
+
 	template<typename T>
 	using deduce_value_t = detail::deduce_value<std::remove_cvref_t<T>>::type;
 
